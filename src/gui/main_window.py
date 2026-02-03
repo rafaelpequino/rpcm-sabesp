@@ -8,9 +8,17 @@ from tkinter import messagebox, filedialog
 from pathlib import Path
 from typing import Optional
 import sys
+import logging
 
 from src.gui.styles import COLORS, FONTS, SPACING, WINDOW, CTK_THEME
 from src.utils.validators import Validator
+from src.utils.logger_config import setup_logger
+from src.utils.config_manager import ConfigManager
+from src.core.document_generator import DocumentGenerator, BatchDocumentGenerator, DocumentGenerationError
+from src.models.documento_rpcm import DocumentoRPCM
+
+# Configurar logger
+logger = setup_logger()
 
 
 class MainWindow(ctk.CTk):
@@ -32,8 +40,10 @@ class MainWindow(ctk.CTk):
         self.modo_var = ctk.StringVar(value="individual")
         self.lista_documentos = []  # Lista de documentos no modo lote
         
-        # Validar template
-        self.template_valido = self._verificar_template()
+        # Inicializar geradores
+        self.generator = None
+        self.batch_generator = None
+        self.template_valido = self._inicializar_geradores()
         
         # Criar interface
         self._criar_interface()
@@ -44,12 +54,28 @@ class MainWindow(ctk.CTk):
         else:
             self.update_status("⚠ Template não encontrado - coloque template_rpcm.docx na pasta templates/", "error")
     
-    def _verificar_template(self) -> bool:
-        """Verifica se o template existe na pasta templates/"""
+    def _inicializar_geradores(self) -> bool:
+        """Inicializa os geradores de documentos"""
         try:
-            template_path = Path("templates/template_rpcm.docx")
-            return template_path.exists()
-        except Exception:
+            self.generator = DocumentGenerator()
+            self.batch_generator = BatchDocumentGenerator()
+            logger.info("Geradores inicializados com sucesso")
+            return True
+        except FileNotFoundError as e:
+            logger.error(f"Template não encontrado: {e}")
+            messagebox.showerror(
+                "Template não encontrado",
+                "O arquivo template_rpcm.docx não foi encontrado na pasta templates/.\n\n"
+                "Por favor, coloque o template nesta pasta e reinicie a aplicação.\n\n"
+                "Consulte templates/README.md para instruções."
+            )
+            return False
+        except Exception as e:
+            logger.error(f"Erro ao inicializar geradores: {e}", exc_info=True)
+            messagebox.showerror(
+                "Erro de Inicialização",
+                f"Erro ao inicializar sistema:\n{str(e)}"
+            )
             return False
     
     def _criar_interface(self):
@@ -74,11 +100,14 @@ class MainWindow(ctk.CTk):
         # 5. Área do Editor
         self._criar_area_editor()
         
-        # 6. Botões de Ação
+        # 6. Botões de Ação (CRIAR MAS NÃO EMPACOTAR AINDA)
         self._criar_botoes_acao()
         
         # 7. Barra de Status
         self._criar_barra_status()
+        
+        # 8. AGORA SIM empacotar os botões no final
+        self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
     
     def _criar_seletor_modo(self):
         """Cria o seletor de modo (Individual/Lote)"""
@@ -243,11 +272,11 @@ class MainWindow(ctk.CTk):
     
     def _criar_area_editor(self):
         """Cria área placeholder para o editor (será implementado na Etapa 2)"""
-        frame = ctk.CTkFrame(self.main_container)
-        frame.pack(fill="both", expand=True, pady=SPACING['margin'])
+        self.frame_editor = ctk.CTkFrame(self.main_container)
+        self.frame_editor.pack(fill="both", expand=True, pady=SPACING['margin'])
         
         label = ctk.CTkLabel(
-            frame, 
+            self.frame_editor, 
             text="REGULAMENTAÇÃO", 
             font=FONTS['subtitle']
         )
@@ -255,7 +284,7 @@ class MainWindow(ctk.CTk):
         
         # Texto informativo
         info_label = ctk.CTkLabel(
-            frame,
+            self.frame_editor,
             text="ℹ️ Editor de Texto Rico será implementado na Etapa 2\n"
                  "Suportará colar do Word/PDF com formatação perfeita\n"
                  "Espaçamento 1,5 e Arial 10pt automáticos",
@@ -267,7 +296,7 @@ class MainWindow(ctk.CTk):
         
         # Caixa de texto temporária
         self.text_regulamentacao = ctk.CTkTextbox(
-            frame,
+            self.frame_editor,
             height=200,
             font=FONTS['input']
         )
@@ -280,13 +309,13 @@ class MainWindow(ctk.CTk):
         )
     
     def _criar_botoes_acao(self):
-        """Cria os botões de ação principais"""
-        frame = ctk.CTkFrame(self.main_container)
-        frame.pack(fill="x", pady=SPACING['margin'])
+        """Cria os botões de ação principais (mas NÃO empacota ainda)"""
+        self.frame_botoes = ctk.CTkFrame(self.main_container)
+        # NÃO fazer .pack() aqui! Será feito manualmente no final de _criar_interface
         
         # Botão Gerar
         self.btn_gerar = ctk.CTkButton(
-            frame,
+            self.frame_botoes,
             text="📄 Gerar Documento",
             command=self._on_gerar_documento,
             font=FONTS['button'],
@@ -302,7 +331,7 @@ class MainWindow(ctk.CTk):
         
         # Botão Limpar
         self.btn_limpar = ctk.CTkButton(
-            frame,
+            self.frame_botoes,
             text="🗑️ Limpar Tudo",
             command=self._on_limpar_tudo,
             font=FONTS['button'],
@@ -311,18 +340,6 @@ class MainWindow(ctk.CTk):
             hover_color="#e0a800"
         )
         self.btn_limpar.pack(side="left", padx=5, pady=10, expand=True, fill="x")
-        
-        # Botão Importar Excel (Modo Lote)
-        self.btn_importar = ctk.CTkButton(
-            frame,
-            text="📊 Importar Excel",
-            command=self._on_importar_excel,
-            font=FONTS['button'],
-            height=40,
-            fg_color=COLORS['info'],
-            hover_color="#138496"
-        )
-        # Inicialmente oculto
     
     def _criar_barra_status(self):
         """Cria a barra de status no rodapé"""
@@ -344,17 +361,31 @@ class MainWindow(ctk.CTk):
         modo = self.modo_var.get()
         
         if modo == "lote":
-            # Mostrar elementos do modo lote
+            # Desempacotar o editor e botões primeiro para reposicionar
+            self.frame_editor.pack_forget()
+            self.frame_botoes.pack_forget()
+            
+            # Mostrar elementos do modo lote NA ORDEM CORRETA
             self.frame_adicionar.pack(fill="x", pady=SPACING['margin'])
             self.frame_lista.pack(fill="both", expand=True, pady=SPACING['margin'])
-            self.btn_importar.pack(side="left", padx=5, pady=10, expand=True, fill="x")
+            
+            # Reempacotar o editor DEPOIS da lista
+            self.frame_editor.pack(fill="both", expand=True, pady=SPACING['margin'])
+            
+            # Reempacotar os botões NO FINAL (por último)
+            self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
+            
             self.btn_gerar.configure(text="📄 Gerar Documentos")
             self.update_status("Modo Lote ativado", "info")
         else:
             # Esconder elementos do modo lote
             self.frame_adicionar.pack_forget()
             self.frame_lista.pack_forget()
-            self.btn_importar.pack_forget()
+            
+            # Reempacotar botões no final do modo individual também
+            self.frame_botoes.pack_forget()
+            self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
+            
             self.btn_gerar.configure(text="📄 Gerar Documento")
             self.update_status("Modo Individual ativado", "info")
     
@@ -521,32 +552,37 @@ class MainWindow(ctk.CTk):
         if not arquivo:
             return  # Usuário cancelou
         
-        # Simular geração (Etapa 3 implementará de verdade)
+        # Gerar documento REAL
         self.update_status("⏳ Gerando documento...", "info")
         self.btn_gerar.configure(state="disabled")
         
-        # Criar arquivo simulado
         try:
-            # Por enquanto só cria arquivo vazio (Etapa 3 implementará geração real)
-            with open(arquivo, 'wb') as f:
-                f.write(b'')  # Arquivo vazio
-            
-            messagebox.showinfo(
-                "Sucesso (Etapa 1)",
-                f"Interface funcionando!\n\n"
-                f"Arquivo: {arquivo}\n\n"
-                f"Dados coletados:\n"
-                f"• Grupo: {grupo}\n"
-                f"• Subgrupo: {subgrupo or '(vazio)'}\n"
-                f"• Nº Preço: {numero_preco}\n"
-                f"• Descrição: {descricao}\n"
-                f"• Unidade: {unidade}\n\n"
-                f"Na Etapa 3, o documento DOCX real será gerado aqui."
+            # Criar objeto DocumentoRPCM
+            documento = DocumentoRPCM(
+                grupo=grupo,
+                subgrupo=subgrupo,  # Pode estar vazio
+                numero_preco=numero_preco,
+                descricao=descricao,
+                unidade=unidade,
+                regulamentacao_html=regulamentacao
             )
             
-            self.update_status("✓ Documento gerado com sucesso (simulado)", "success")
+            # Gerar documento
+            resultado = self.generator.gerar_documento(documento, arquivo)
             
+            messagebox.showinfo(
+                "Sucesso",
+                f"Documento gerado com sucesso!\n\n{resultado}"
+            )
+            
+            self.update_status("✓ Documento gerado com sucesso!", "success")
+            
+        except DocumentGenerationError as e:
+            logger.error(f"Erro na geração: {e}")
+            messagebox.showerror("Erro na Geração", f"Erro ao gerar documento:\n\n{str(e)}")
+            self.update_status("✗ Erro na geração do documento", "error")
         except Exception as e:
+            logger.error(f"Erro inesperado: {e}", exc_info=True)
             messagebox.showerror("Erro", f"Erro ao criar arquivo:\n{e}")
             self.update_status("✗ Erro ao gerar documento", "error")
         
@@ -577,46 +613,57 @@ class MainWindow(ctk.CTk):
         if not pasta:
             return  # Usuário cancelou
         
-        # Simular geração em lote
+        # Gerar documentos REALMENTE
         total = len(self.lista_documentos)
         self.btn_gerar.configure(state="disabled")
         
-        try:
-            sucesso = 0
-            for i, doc in enumerate(self.lista_documentos, 1):
-                # Atualizar status
-                self.update_status(f"⏳ Gerando documento {i} de {total}...", "info")
-                self.update()  # Forçar atualização da interface
-                
-                # Simular criação de arquivo
-                nome_arquivo = f"{doc['numero_preco']}_{doc['descricao'][:50]}.docx"
-                caminho = Path(pasta) / nome_arquivo
-                
-                with open(caminho, 'wb') as f:
-                    f.write(b'')  # Arquivo vazio
-                
-                sucesso += 1
-            
-            messagebox.showinfo(
-                "Sucesso (Etapa 1)",
-                f"Interface funcionando!\n\n"
-                f"✓ {sucesso} documentos gerados (simulados)\n"
-                f"Pasta: {pasta}\n\n"
-                f"Regulamentação compartilhada entre todos.\n\n"
-                f"Na Etapa 3, os documentos DOCX reais serão gerados."
-            )
-            
-            self.update_status(f"✓ {sucesso} documentos gerados com sucesso (simulado)", "success")
-            
-            # Limpar lista após sucesso
-            if messagebox.askyesno("Limpar lista?", "Deseja limpar a lista de documentos?"):
-                self.lista_documentos.clear()
-                # Limpar tabela visual
-                for widget in self.linhas_container.winfo_children():
-                    widget.destroy()
-                self.update_status("Lista limpa", "info")
+        # Limpar lista do batch generator e adicionar todos os documentos
+        self.batch_generator.limpar_lista()
         
+        try:
+            # Adicionar todos os documentos ao batch generator
+            for doc_dict in self.lista_documentos:
+                documento = DocumentoRPCM(
+                    grupo=doc_dict['grupo'],
+                    subgrupo=doc_dict.get('subgrupo', ''),  # Pode estar vazio
+                    numero_preco=doc_dict['numero_preco'],
+                    descricao=doc_dict['descricao'],
+                    unidade=doc_dict['unidade'],
+                    regulamentacao_html=regulamentacao
+                )
+                self.batch_generator.adicionar_documento(documento)
+            
+            # Callback de progresso
+            def atualizar_progresso(atual, total_docs, nome_arquivo):
+                self.update_status(f"⏳ Gerando {nome_arquivo} ({atual}/{total_docs})...", "info")
+                self.update()  # Forçar atualização da interface
+            
+            # Gerar todos os documentos
+            resultados = self.batch_generator.gerar_todos(pasta, atualizar_progresso)
+            
+            # Montar mensagem de resultado
+            mensagem = f"Geração em lote concluída!\n\n"
+            mensagem += f"✓ Sucesso: {resultados['sucesso']}\n"
+            
+            if resultados['erro'] > 0:
+                mensagem += f"✗ Erros: {resultados['erro']}\n\n"
+                mensagem += "Documentos com erro:\n"
+                for erro in resultados['erros'][:5]:  # Mostrar até 5
+                    mensagem += f"  • {erro['numero_preco']}: {erro['erro']}\n"
+            
+            messagebox.showinfo("Geração Concluída", mensagem)
+            
+            self.update_status(
+                f"✓ {resultados['sucesso']} documentos gerados com sucesso",
+                "success" if resultados['erro'] == 0 else "warning"
+            )
+        
+        except DocumentGenerationError as e:
+            logger.error(f"Erro na geração em lote: {e}")
+            messagebox.showerror("Erro na Geração", f"Erro ao gerar documentos:\n\n{str(e)}")
+            self.update_status("✗ Erro na geração em lote", "error")
         except Exception as e:
+            logger.error(f"Erro inesperado: {e}", exc_info=True)
             messagebox.showerror("Erro", f"Erro ao gerar documentos:\n{e}")
             self.update_status("✗ Erro na geração em lote", "error")
         
@@ -664,17 +711,43 @@ class MainWindow(ctk.CTk):
         if not arquivo:
             return
         
-        # Etapa 1: apenas mostrar mensagem
-        messagebox.showinfo(
-            "Importação (Etapa 1)",
-            f"Interface funcionando!\n\n"
-            f"Arquivo selecionado:\n{arquivo}\n\n"
-            f"Formato esperado:\n"
-            f"Colunas: Grupo | Subgrupo | Nº Preço | Descrição | Unidade\n\n"
-            f"A importação real será implementada na Etapa 3."
-        )
+        # Importar REALMENTE via batch_generator
+        self.update_status("⏳ Importando dados...", "info")
         
-        self.update_status("Importação será implementada na Etapa 3", "info")
+        try:
+            num_importados = self.batch_generator.importar_excel(arquivo, regulamentacao)
+            
+            # Atualizar lista visual e lista_documentos
+            self.lista_documentos.clear()
+            for widget in self.linhas_container.winfo_children():
+                widget.destroy()
+            
+            # Adicionar à lista visual
+            for documento in self.batch_generator.documentos:
+                doc_dict = {
+                    'grupo': documento.grupo,
+                    'subgrupo': documento.subgrupo,
+                    'numero_preco': documento.numero_preco,
+                    'descricao': documento.descricao,
+                    'unidade': documento.unidade
+                }
+                self.lista_documentos.append(doc_dict)
+                self._adicionar_linha_tabela(doc_dict)
+            
+            messagebox.showinfo(
+                "Importação Concluída",
+                f"✓ {num_importados} documentos importados com sucesso!"
+            )
+            self.update_status(f"✓ {num_importados} itens importados", "success")
+            
+        except ImportError as e:
+            logger.error(f"Erro ao importar: {e}")
+            messagebox.showerror("Erro na Importação", str(e))
+            self.update_status("✗ Erro ao importar arquivo", "error")
+        except Exception as e:
+            logger.error(f"Erro inesperado: {e}", exc_info=True)
+            messagebox.showerror("Erro", f"Erro inesperado:\n{e}")
+            self.update_status("✗ Erro na importação", "error")
     
     def update_status(self, message: str, tipo: str = "info"):
         """
