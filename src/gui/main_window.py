@@ -540,8 +540,22 @@ class MainWindow(ctk.CTk):
             messagebox.showwarning("Validação", "A regulamentação é obrigatória")
             return
         
-        # Perguntar onde salvar
-        nome_sugerido = f"{numero_preco}_{descricao[:50]}.docx"
+        # Criar objeto DocumentoRPCM primeiro para usar o método get_nome_arquivo()
+        try:
+            documento = DocumentoRPCM(
+                grupo=grupo,
+                subgrupo=subgrupo,  # Pode estar vazio
+                numero_preco=numero_preco,
+                descricao=descricao,
+                unidade=unidade,
+                regulamentacao_html=regulamentacao
+            )
+        except ValueError as e:
+            messagebox.showerror("Validação", str(e))
+            return
+        
+        # Perguntar onde salvar (usando nome limpo do documento)
+        nome_sugerido = documento.get_nome_arquivo()
         arquivo = filedialog.asksaveasfilename(
             title="Salvar Documento",
             defaultextension=".docx",
@@ -557,15 +571,6 @@ class MainWindow(ctk.CTk):
         self.btn_gerar.configure(state="disabled")
         
         try:
-            # Criar objeto DocumentoRPCM
-            documento = DocumentoRPCM(
-                grupo=grupo,
-                subgrupo=subgrupo,  # Pode estar vazio
-                numero_preco=numero_preco,
-                descricao=descricao,
-                unidade=unidade,
-                regulamentacao_html=regulamentacao
-            )
             
             # Gerar documento
             resultado = self.generator.gerar_documento(documento, arquivo)

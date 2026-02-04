@@ -62,10 +62,10 @@ class DocumentoRPCM:
     def get_nome_arquivo(self) -> str:
         """
         Gera nome do arquivo no formato: NumPreco_Descricao.docx
-        Remove caracteres inválidos da descrição
+        Remove caracteres inválidos e substitui espaços por underline
         
         Returns:
-            Nome do arquivo (ex: 123456_Tubulacao PVC.docx)
+            Nome do arquivo (ex: 123456_Tubulacao_PVC.docx)
         """
         descricao_limpa = self._limpar_nome_arquivo(self.descricao)
         return f"{self.numero_preco}_{descricao_limpa}.docx"
@@ -73,14 +73,15 @@ class DocumentoRPCM:
     @staticmethod
     def _limpar_nome_arquivo(nome: str) -> str:
         """
-        Remove caracteres inválidos para nome de arquivo
+        Remove caracteres inválidos para nome de arquivo e substitui espaços por underscore
         
         Args:
-            nome: Nome original
+            nome: Nome original (ex: "Nome da RPCM")
             
         Returns:
-            Nome limpo e válido para arquivo
+            Nome limpo e válido para arquivo (ex: "Nome_da_RPCM")
         """
+        # Remove caracteres inválidos para nomes de arquivo no Windows
         caracteres_invalidos = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
         
         for char in caracteres_invalidos:
@@ -93,9 +94,14 @@ class DocumentoRPCM:
         while '__' in nome:
             nome = nome.replace('__', '_')
         
+        # Remover underscores do início e do fim
+        nome = nome.strip('_')
+        
         # Limitar tamanho (Windows tem limite de 255 chars no caminho)
         if len(nome) > 100:
             nome = nome[:100]
+            # Remover underscore do final se foi cortado
+            nome = nome.rstrip('_')
         
         return nome
     
@@ -111,5 +117,6 @@ class DocumentoRPCM:
             'SUBGRUPO': self.subgrupo,
             'N_PRECO': self.numero_preco,
             'DESCRICAO': self.descricao,
-            'UNIDADE': self.unidade
+            'UNIDADE': self.unidade,
+            'REGULAMENTACAO': self.regulamentacao_html
         }
