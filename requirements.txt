@@ -19,6 +19,7 @@ xlrd>=2.0.1
 
 # Utilidades
 Pillow>=10.0.0
+pyperclip>=1.8.0
 
 # Testes
 pytest>=7.4.0

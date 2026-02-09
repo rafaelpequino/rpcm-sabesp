@@ -1,6 +1,6 @@
 """
 Janela principal da aplicação
-Interface completa com modo Individual e Lote
+Interface simplificada - somente modo lote
 """
 
 import customtkinter as ctk
@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 import sys
 import logging
+import pyperclip
 
 from src.gui.styles import COLORS, FONTS, SPACING, WINDOW, CTK_THEME
 from src.utils.validators import Validator
@@ -37,8 +38,8 @@ class MainWindow(ctk.CTk):
         self.minsize(WINDOW['min_width'], WINDOW['min_height'])
         
         # Variáveis de controle
-        self.modo_var = ctk.StringVar(value="individual")
-        self.lista_documentos = []  # Lista de documentos no modo lote
+        self.lista_documentos = []  # Lista de documentos
+        self.template_path = None  # Caminho do template selecionado
         
         # Inicializar geradores
         self.generator = None
@@ -85,65 +86,74 @@ class MainWindow(ctk.CTk):
         self.main_container = ctk.CTkScrollableFrame(self)
         self.main_container.pack(fill="both", expand=True, padx=SPACING['padding'], pady=SPACING['padding'])
         
-        # 1. Seletor de Modo
-        self._criar_seletor_modo()
+        # 1. Seleção de Template
+        self._criar_secao_template()
         
         # 2. Campos de Entrada
         self._criar_campos_entrada()
         
-        # 3. Botão Adicionar (Modo Lote)
+        # 3. Botão Adicionar
         self._criar_botao_adicionar()
         
-        # 4. Tabela de Lista (Modo Lote)
+        # 4. Tabela de Lista
         self._criar_tabela_lista()
         
-        # 5. Área do Editor
-        self._criar_area_editor()
-        
-        # 6. Botões de Ação (CRIAR MAS NÃO EMPACOTAR AINDA)
+        # 5. Botões de Ação
         self._criar_botoes_acao()
         
-        # 7. Barra de Status
+        # 6. Barra de Status
         self._criar_barra_status()
-        
-        # 8. AGORA SIM empacotar os botões no final
-        self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
     
-    def _criar_seletor_modo(self):
-        """Cria o seletor de modo (Individual/Lote)"""
+    def _criar_secao_template(self):
+        """Cria a seção de seleção de template"""
         frame = ctk.CTkFrame(self.main_container)
         frame.pack(fill="x", pady=(0, SPACING['margin']))
         
         label = ctk.CTkLabel(
             frame, 
-            text="MODO DE OPERAÇÃO", 
+            text="📄 TEMPLATE", 
             font=FONTS['subtitle']
         )
-        label.pack(pady=SPACING['small_margin'])
+        label.pack(pady=SPACING['small_margin'], anchor="w", padx=10)
         
-        # Radio buttons
-        radio_frame = ctk.CTkFrame(frame)
-        radio_frame.pack(pady=SPACING['small_margin'])
+        # Container para o botão e label do arquivo
+        container = ctk.CTkFrame(frame)
+        container.pack(fill="x", padx=10, pady=(0, 10))
         
-        self.radio_individual = ctk.CTkRadioButton(
-            radio_frame,
-            text="⚪ Modo Individual",
-            variable=self.modo_var,
-            value="individual",
-            command=self._on_modo_changed,
-            font=FONTS['label']
+        # Botão Selecionar Template
+        btn_selecionar = ctk.CTkButton(
+            container,
+            text="📁 Selecionar Template",
+            command=self._on_selecionar_template,
+            font=FONTS['button'],
+            height=35,
+            width=200,
+            fg_color=COLORS['info'],
+            hover_color="#138496"
         )
-        self.radio_individual.pack(side="left", padx=20, pady=10)
+        btn_selecionar.pack(side="left", padx=10, pady=10)
         
-        self.radio_lote = ctk.CTkRadioButton(
-            radio_frame,
-            text="🔵 Modo Lote",
-            variable=self.modo_var,
-            value="lote",
-            command=self._on_modo_changed,
-            font=FONTS['label']
+        # Label mostrando o template atual
+        self.label_template_atual = ctk.CTkLabel(
+            container,
+            text=self._get_texto_template_status(),
+            font=FONTS['small'],
+            text_color=COLORS['warning'] if not self.template_valido else COLORS['success'],
+            anchor="w"
         )
-        self.radio_lote.pack(side="left", padx=20, pady=10)
+        self.label_template_atual.pack(side="left", padx=10, fill="x", expand=True)
+    
+    def _get_texto_template_status(self) -> str:
+        """Retorna o texto de status do template"""
+        if not self.template_valido:
+            return "⚠ Nenhum template selecionado"
+        
+        if self.template_path:
+            # Template customizado
+            return f"✓ Template: {Path(self.template_path).name}"
+        else:
+            # Template padrão
+            return "✓ Template padrão: template_rpcm.docx"
     
     def _criar_campos_entrada(self):
         """Cria os campos de entrada de dados"""
@@ -221,23 +231,40 @@ class MainWindow(ctk.CTk):
         setattr(self, f"error_{field_name}", error_label)
     
     def _criar_botao_adicionar(self):
-        """Cria o botão Adicionar à Lista (Modo Lote)"""
+        """Cria o botão Adicionar à Lista e Copiar do Excel"""
         self.frame_adicionar = ctk.CTkFrame(self.main_container)
-        # Inicialmente oculto (só aparece no modo lote)
+        self.frame_adicionar.pack(fill="x", pady=SPACING['margin'])
+        
+        # Container para os botões lado a lado
+        botoes_container = ctk.CTkFrame(self.frame_adicionar)
+        botoes_container.pack(pady=10)
         
         self.btn_adicionar = ctk.CTkButton(
-            self.frame_adicionar,
+            botoes_container,
             text="➕ Adicionar à Lista",
             command=self._on_adicionar_lista,
             font=FONTS['button'],
-            height=35
+            height=35,
+            width=200
         )
-        self.btn_adicionar.pack(pady=10)
+        self.btn_adicionar.pack(side="left", padx=5)
+        
+        self.btn_copiar_excel = ctk.CTkButton(
+            botoes_container,
+            text="📋 Copiar do Excel",
+            command=self._on_copiar_excel,
+            font=FONTS['button'],
+            height=35,
+            width=200,
+            fg_color=COLORS['info'],
+            hover_color="#138496"
+        )
+        self.btn_copiar_excel.pack(side="left", padx=5)
     
     def _criar_tabela_lista(self):
-        """Cria a tabela de lista de documentos (Modo Lote)"""
+        """Cria a tabela de lista de documentos"""
         self.frame_lista = ctk.CTkFrame(self.main_container)
-        # Inicialmente oculto
+        self.frame_lista.pack(fill="both", expand=True, pady=SPACING['margin'])
         
         label = ctk.CTkLabel(
             self.frame_lista, 
@@ -270,54 +297,16 @@ class MainWindow(ctk.CTk):
         self.linhas_container = ctk.CTkFrame(self.tabela_scroll)
         self.linhas_container.pack(fill="both", expand=True)
     
-    def _criar_area_editor(self):
-        """Cria área placeholder para o editor (será implementado na Etapa 2)"""
-        self.frame_editor = ctk.CTkFrame(self.main_container)
-        self.frame_editor.pack(fill="both", expand=True, pady=SPACING['margin'])
-        
-        label = ctk.CTkLabel(
-            self.frame_editor, 
-            text="REGULAMENTAÇÃO", 
-            font=FONTS['subtitle']
-        )
-        label.pack(pady=SPACING['small_margin'], anchor="w", padx=10)
-        
-        # Texto informativo
-        info_label = ctk.CTkLabel(
-            self.frame_editor,
-            text="ℹ️ Editor de Texto Rico será implementado na Etapa 2\n"
-                 "Suportará colar do Word/PDF com formatação perfeita\n"
-                 "Espaçamento 1,5 e Arial 10pt automáticos",
-            font=FONTS['small'],
-            text_color=COLORS['info'],
-            justify="left"
-        )
-        info_label.pack(pady=10, padx=10)
-        
-        # Caixa de texto temporária
-        self.text_regulamentacao = ctk.CTkTextbox(
-            self.frame_editor,
-            height=200,
-            font=FONTS['input']
-        )
-        self.text_regulamentacao.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        
-        # Inserir texto placeholder
-        self.text_regulamentacao.insert("1.0", 
-            "Digite ou cole aqui a regulamentação do documento...\n\n"
-            "(Na Etapa 2, este será substituído por um editor WYSIWYG profissional)"
-        )
-    
     def _criar_botoes_acao(self):
-        """Cria os botões de ação principais (mas NÃO empacota ainda)"""
+        """Cria os botões de ação principais"""
         self.frame_botoes = ctk.CTkFrame(self.main_container)
-        # NÃO fazer .pack() aqui! Será feito manualmente no final de _criar_interface
+        self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
         
-        # Botão Gerar
+        # Botão Gerar Documentos
         self.btn_gerar = ctk.CTkButton(
             self.frame_botoes,
-            text="📄 Gerar Documento",
-            command=self._on_gerar_documento,
+            text="📄 Gerar Documentos",
+            command=self._gerar_documentos_lote,
             font=FONTS['button'],
             height=40,
             fg_color=COLORS['success'],
@@ -355,39 +344,6 @@ class MainWindow(ctk.CTk):
         self.status_label.pack(side="left", padx=10, pady=5)
     
     # ===== MÉTODOS DE CONTROLE =====
-    
-    def _on_modo_changed(self):
-        """Handler quando o modo é alterado"""
-        modo = self.modo_var.get()
-        
-        if modo == "lote":
-            # Desempacotar o editor e botões primeiro para reposicionar
-            self.frame_editor.pack_forget()
-            self.frame_botoes.pack_forget()
-            
-            # Mostrar elementos do modo lote NA ORDEM CORRETA
-            self.frame_adicionar.pack(fill="x", pady=SPACING['margin'])
-            self.frame_lista.pack(fill="both", expand=True, pady=SPACING['margin'])
-            
-            # Reempacotar o editor DEPOIS da lista
-            self.frame_editor.pack(fill="both", expand=True, pady=SPACING['margin'])
-            
-            # Reempacotar os botões NO FINAL (por último)
-            self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
-            
-            self.btn_gerar.configure(text="📄 Gerar Documentos")
-            self.update_status("Modo Lote ativado", "info")
-        else:
-            # Esconder elementos do modo lote
-            self.frame_adicionar.pack_forget()
-            self.frame_lista.pack_forget()
-            
-            # Reempacotar botões no final do modo individual também
-            self.frame_botoes.pack_forget()
-            self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
-            
-            self.btn_gerar.configure(text="📄 Gerar Documento")
-            self.update_status("Modo Individual ativado", "info")
     
     def _on_adicionar_lista(self):
         """Handler para adicionar item à lista (Modo Lote)"""
@@ -439,6 +395,201 @@ class MainWindow(ctk.CTk):
         self.entry_grupo.focus()
         
         self.update_status(f"Item adicionado: {numero_preco} ({len(self.lista_documentos)} na lista)", "success")
+    
+    def _on_copiar_excel(self):
+        """Handler para copiar dados do Excel via clipboard"""
+        try:
+            # Ler dados do clipboard
+            clipboard_data = pyperclip.paste()
+            
+            if not clipboard_data or not clipboard_data.strip():
+                messagebox.showwarning(
+                    "Clipboard Vazio",
+                    "Não há dados copiados.\n\n"
+                    "Copie os dados do Excel (Ctrl+C) e tente novamente."
+                )
+                return
+            
+            # Parsear dados (formato TSV - Tab Separated Values)
+            linhas = clipboard_data.strip().split('\n')
+            
+            # Verificar se há dados
+            if not linhas:
+                messagebox.showwarning(
+                    "Sem Dados",
+                    "Nenhuma linha encontrada nos dados copiados."
+                )
+                return
+            
+            # Processar cada linha
+            itens_adicionados = 0
+            itens_duplicados = 0
+            erros = []
+            
+            for i, linha in enumerate(linhas, 1):
+                # Separar por TAB
+                colunas = linha.split('\t')
+                
+                # Verificar se tem 5 colunas (Grupo, Subgrupo, Nº Preço, Descrição, Unidade)
+                if len(colunas) < 5:
+                    erros.append(f"Linha {i}: formato inválido (esperado 5 colunas, encontrado {len(colunas)})")
+                    continue
+                
+                grupo = colunas[0].strip()
+                subgrupo = colunas[1].strip()
+                numero_preco = colunas[2].strip()
+                descricao = colunas[3].strip()
+                unidade = colunas[4].strip()
+                
+                # Pular linha de cabeçalho (se existir)
+                if numero_preco.upper() in ['Nº PREÇO', 'N° PREÇO', 'NUMERO PRECO', 'N PRECO']:
+                    continue
+                
+                # Validar campos obrigatórios
+                valid, validation_errors = Validator.validate_all_fields(
+                    grupo, subgrupo, numero_preco, descricao, unidade
+                )
+                
+                if not valid:
+                    erros.append(f"Linha {i} ({numero_preco}): {', '.join(validation_errors)}")
+                    continue
+                
+                # Verificar duplicata
+                duplicado = False
+                for doc in self.lista_documentos:
+                    if doc['numero_preco'] == numero_preco:
+                        itens_duplicados += 1
+                        duplicado = True
+                        break
+                
+                if duplicado:
+                    continue
+                
+                # Adicionar à lista
+                documento = {
+                    'grupo': grupo,
+                    'subgrupo': subgrupo,
+                    'numero_preco': numero_preco,
+                    'descricao': descricao,
+                    'unidade': unidade
+                }
+                self.lista_documentos.append(documento)
+                self._adicionar_linha_tabela(documento)
+                itens_adicionados += 1
+            
+            # Mostrar resultado
+            mensagem = f"✓ {itens_adicionados} itens adicionados à lista"
+            
+            if itens_duplicados > 0:
+                mensagem += f"\n⚠ {itens_duplicados} itens duplicados ignorados"
+            
+            if erros:
+                mensagem += f"\n\n✗ {len(erros)} erros encontrados:"
+                for erro in erros[:5]:  # Mostrar até 5 erros
+                    mensagem += f"\n  • {erro}"
+                if len(erros) > 5:
+                    mensagem += f"\n  ... e mais {len(erros) - 5} erros"
+            
+            if itens_adicionados > 0:
+                messagebox.showinfo("Importação Concluída", mensagem)
+                self.update_status(f"✓ {itens_adicionados} itens importados do Excel", "success")
+            else:
+                messagebox.showwarning("Nenhum Item Adicionado", mensagem)
+                self.update_status("⚠ Nenhum item válido encontrado", "warning")
+                
+        except Exception as e:
+            logger.error(f"Erro ao copiar do Excel: {e}", exc_info=True)
+            messagebox.showerror(
+                "Erro",
+                f"Erro ao processar dados do clipboard:\n\n{str(e)}\n\n"
+                "Certifique-se de copiar os dados diretamente do Excel."
+            )
+            self.update_status("✗ Erro ao importar dados", "error")
+    
+    def _on_selecionar_template(self):
+        """Handler para selecionar arquivo de template"""
+        # Abrir diálogo para selecionar arquivo
+        arquivo = filedialog.askopenfilename(
+            title="Selecionar Template DOCX",
+            filetypes=[
+                ("Word Documents", "*.docx"),
+                ("Todos os arquivos", "*.*")
+            ],
+            initialdir=Path.cwd() / "templates" if (Path.cwd() / "templates").exists() else Path.cwd()
+        )
+        
+        if not arquivo:
+            return  # Usuário cancelou
+        
+        arquivo_path = Path(arquivo)
+        
+        # Validar arquivo
+        if not arquivo_path.exists():
+            messagebox.showerror(
+                "Arquivo não encontrado",
+                f"O arquivo selecionado não existe:\n{arquivo}"
+            )
+            return
+        
+        if arquivo_path.suffix.lower() != '.docx':
+            messagebox.showwarning(
+                "Formato inválido",
+                "Por favor, selecione um arquivo .docx válido."
+            )
+            return
+        
+        # Tentar carregar o template
+        try:
+            # Testar se o arquivo é um template válido
+            from docxtpl import DocxTemplate
+            DocxTemplate(str(arquivo_path))
+            
+            # Template válido - salvar caminho
+            self.template_path = str(arquivo_path)
+            
+            # Reinicializar geradores com novo template
+            try:
+                self.generator = DocumentGenerator(self.template_path)
+                self.batch_generator = BatchDocumentGenerator(self.template_path)
+                self.template_valido = True
+                
+                # Habilitar botão gerar
+                self.btn_gerar.configure(state="normal")
+                
+                # Atualizar label
+                self.label_template_atual.configure(
+                    text=self._get_texto_template_status(),
+                    text_color=COLORS['success']
+                )
+                
+                # Atualizar status
+                self.update_status(f"✓ Template carregado: {arquivo_path.name}", "success")
+                
+                messagebox.showinfo(
+                    "Template Carregado",
+                    f"Template carregado com sucesso!\n\n{arquivo_path.name}"
+                )
+                
+                logger.info(f"Template customizado carregado: {arquivo_path}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao inicializar geradores: {e}", exc_info=True)
+                messagebox.showerror(
+                    "Erro ao Carregar Template",
+                    f"Erro ao inicializar geradores com o template:\n\n{str(e)}"
+                )
+                self.template_valido = False
+                self.btn_gerar.configure(state="disabled")
+                self.update_status("✗ Erro ao carregar template", "error")
+        
+        except Exception as e:
+            logger.error(f"Erro ao validar template: {e}", exc_info=True)
+            messagebox.showerror(
+                "Template Inválido",
+                f"O arquivo selecionado não é um template válido:\n\n{str(e)}\n\n"
+                "Certifique-se de que é um arquivo .docx válido."
+            )
+            self.update_status("✗ Template inválido", "error")
     
     def _adicionar_linha_tabela(self, documento: dict):
         """Adiciona uma linha à tabela visual"""
@@ -497,117 +648,14 @@ class MainWindow(ctk.CTk):
         self.entry_descricao.delete(0, 'end')
         self.entry_unidade.delete(0, 'end')
     
-    def _on_gerar_documento(self):
-        """Handler para gerar documento(s)"""
-        modo = self.modo_var.get()
-        
-        if modo == "individual":
-            self._gerar_documento_individual()
-        else:
-            self._gerar_documentos_lote()
-    
-    def _gerar_documento_individual(self):
-        """Gera um único documento (Modo Individual)"""
-        # Verificar template
-        if not self.template_valido:
-            messagebox.showerror(
-                "Template não encontrado",
-                "Coloque o arquivo template_rpcm.docx na pasta templates/"
-            )
-            return
-        
-        # Coletar dados
-        grupo = self.entry_grupo.get().strip()
-        subgrupo = self.entry_subgrupo.get().strip()
-        numero_preco = self.entry_numero_preco.get().strip()
-        descricao = self.entry_descricao.get().strip()
-        unidade = self.entry_unidade.get().strip()
-        regulamentacao = self.text_regulamentacao.get("1.0", "end-1c").strip()
-        
-        # Validar campos
-        valid, errors = Validator.validate_all_fields(
-            grupo, subgrupo, numero_preco, descricao, unidade
-        )
-        
-        if not valid:
-            messagebox.showerror(
-                "Validação",
-                "Erros encontrados:\n\n" + "\n".join(f"• {e}" for e in errors)
-            )
-            return
-        
-        if not regulamentacao:
-            messagebox.showwarning("Validação", "A regulamentação é obrigatória")
-            return
-        
-        # Criar objeto DocumentoRPCM primeiro para usar o método get_nome_arquivo()
-        try:
-            documento = DocumentoRPCM(
-                grupo=grupo,
-                subgrupo=subgrupo,  # Pode estar vazio
-                numero_preco=numero_preco,
-                descricao=descricao,
-                unidade=unidade,
-                regulamentacao_html=regulamentacao
-            )
-        except ValueError as e:
-            messagebox.showerror("Validação", str(e))
-            return
-        
-        # Perguntar onde salvar (usando nome limpo do documento)
-        nome_sugerido = documento.get_nome_arquivo()
-        arquivo = filedialog.asksaveasfilename(
-            title="Salvar Documento",
-            defaultextension=".docx",
-            initialfile=nome_sugerido,
-            filetypes=[("Word Documents", "*.docx")]
-        )
-        
-        if not arquivo:
-            return  # Usuário cancelou
-        
-        # Gerar documento REAL
-        self.update_status("⏳ Gerando documento...", "info")
-        self.btn_gerar.configure(state="disabled")
-        
-        try:
-            
-            # Gerar documento
-            resultado = self.generator.gerar_documento(documento, arquivo)
-            
-            messagebox.showinfo(
-                "Sucesso",
-                f"Documento gerado com sucesso!\n\n{resultado}"
-            )
-            
-            self.update_status("✓ Documento gerado com sucesso!", "success")
-            
-        except DocumentGenerationError as e:
-            logger.error(f"Erro na geração: {e}")
-            messagebox.showerror("Erro na Geração", f"Erro ao gerar documento:\n\n{str(e)}")
-            self.update_status("✗ Erro na geração do documento", "error")
-        except Exception as e:
-            logger.error(f"Erro inesperado: {e}", exc_info=True)
-            messagebox.showerror("Erro", f"Erro ao criar arquivo:\n{e}")
-            self.update_status("✗ Erro ao gerar documento", "error")
-        
-        finally:
-            self.btn_gerar.configure(state="normal")
-    
     def _gerar_documentos_lote(self):
-        """Gera múltiplos documentos (Modo Lote)"""
+        """Gera múltiplos documentos"""
         # Verificar se há itens na lista
         if not self.lista_documentos:
             messagebox.showwarning(
                 "Lista vazia",
                 "Adicione pelo menos um documento à lista antes de gerar."
             )
-            return
-        
-        # Verificar regulamentação
-        regulamentacao = self.text_regulamentacao.get("1.0", "end-1c").strip()
-        if not regulamentacao:
-            messagebox.showwarning("Validação", "A regulamentação é obrigatória")
             return
         
         # Selecionar pasta de destino
@@ -633,8 +681,7 @@ class MainWindow(ctk.CTk):
                     subgrupo=doc_dict.get('subgrupo', ''),  # Pode estar vazio
                     numero_preco=doc_dict['numero_preco'],
                     descricao=doc_dict['descricao'],
-                    unidade=doc_dict['unidade'],
-                    regulamentacao_html=regulamentacao
+                    unidade=doc_dict['unidade']
                 )
                 self.batch_generator.adicionar_documento(documento)
             
@@ -681,10 +728,7 @@ class MainWindow(ctk.CTk):
             # Limpar campos
             self._limpar_campos_dados()
             
-            # Limpar regulamentação
-            self.text_regulamentacao.delete("1.0", "end")
-            
-            # Limpar lista (modo lote)
+            # Limpar lista
             self.lista_documentos.clear()
             for widget in self.linhas_container.winfo_children():
                 widget.destroy()
@@ -692,16 +736,7 @@ class MainWindow(ctk.CTk):
             self.update_status("Formulário limpo", "info")
     
     def _on_importar_excel(self):
-        """Handler para importar Excel (Modo Lote)"""
-        # Verificar regulamentação
-        regulamentacao = self.text_regulamentacao.get("1.0", "end-1c").strip()
-        if not regulamentacao:
-            messagebox.showwarning(
-                "Regulamentação vazia",
-                "Preencha a regulamentação antes de importar dados."
-            )
-            return
-        
+        """Handler para importar Excel"""
         # Selecionar arquivo
         arquivo = filedialog.askopenfilename(
             title="Selecionar arquivo Excel/CSV",
@@ -720,7 +755,7 @@ class MainWindow(ctk.CTk):
         self.update_status("⏳ Importando dados...", "info")
         
         try:
-            num_importados = self.batch_generator.importar_excel(arquivo, regulamentacao)
+            num_importados = self.batch_generator.importar_excel(arquivo)
             
             # Atualizar lista visual e lista_documentos
             self.lista_documentos.clear()

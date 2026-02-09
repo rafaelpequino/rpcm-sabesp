@@ -1,24 +1,14 @@
 # 📋 Automação RPCM - Sabesp
 
-Sistema de geração automatizada de documentos RPCM com interface gráfica moderna.
+Sistema simplificado de geração automatizada de documentos RPCM com interface gráfica moderna.
 
-## 🚀 Status do Desenvolvimento
+## 🚀 Funcionalidades
 
-✅ **ETAPA 1 - Interface e Usabilidade** - CONCLUÍDA (02/02/2026)
-✅ **ETAPA 3 - Funcionalidades de Automação** - CONCLUÍDA (03/02/2026)
-
-**Progresso:** 50% (2 de 4 etapas)
-
-| Etapa | Status | Descrição |
-|-------|--------|-----------|
-| Etapa 1 | ✅ 100% | Interface e Usabilidade |
-| Etapa 2 | 📋 0% | Editor de Texto Rico |
-| Etapa 3 | ✅ 100% | Funcionalidades de Automação |
-| Etapa 4 | 📋 0% | Testes e Refinamentos |
-
-Próximas etapas:
-- 🔨 Etapa 2 - Editor de Texto Rico (PRÓXIMA - mais crítica)
-- 📋 Etapa 4 - Testes e Refinamentos
+✅ **Modo Lote** - Gere múltiplos documentos de uma vez  
+✅ **Copiar do Excel** - Cole dados diretamente da planilha  
+✅ **Template Customizado** - Use seu próprio template .docx  
+✅ **Validações Automáticas** - Sistema valida todos os campos  
+✅ **Interface Moderna** - Design limpo e intuitivo
 
 ## 📦 Instalação
 
@@ -35,10 +25,10 @@ Próximas etapas:
 pip install -r requirements.txt
 ```
 
-3. Coloque o template DOCX:
+3. **(Opcional)** Coloque um template padrão:
    - Arquivo: `template_rpcm.docx`
    - Local: pasta `templates/`
-   - Veja instruções em `templates/README.md`
+   - Ou selecione um template na interface
 
 ## ▶️ Como Usar
 
@@ -48,27 +38,51 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-### Modo Individual
-1. Selecione "Modo Individual"
-2. Preencha os campos:
+### Passo 1: Selecionar Template
+
+1. Clique em **"📁 Selecionar Template"**
+2. Escolha um arquivo .docx com as variáveis:
+   - `{{GRUPO}}`, `{{SUBGRUPO}}`, `{{N_PRECO}}`, `{{DESCRICAO}}`, `{{UNIDADE}}`
+3. Veja confirmação: **"✓ Template carregado"**
+
+📚 [Ver documentação completa de templates](docs/SELECIONAR_TEMPLATE.md)
+
+### Passo 2: Adicionar Documentos
+
+#### Opção A: Manual
+1. Preencha os campos:
    - Grupo *
    - Subgrupo (opcional)
    - Nº Preço * (apenas números, ex: 123456)
    - Descrição *
    - Unidade *
-3. Preencha a regulamentação
-4. Clique em "Gerar Documento"
-5. Escolha onde salvar
+2. Clique em **"➕ Adicionar à Lista"**
 
-### Modo Lote
-1. Selecione "Modo Lote"
-2. Preencha a regulamentação (UMA VEZ para todos)
-3. Adicione documentos:
-   - Preencha os campos e clique "Adicionar à Lista"
-   - OU clique "Importar Excel" (formato: Grupo, Subgrupo, Nº Preço, Descrição, Unidade)
-4. Clique em "Gerar Documentos"
-5. Escolha a pasta de destino
-6. ✓ Todos os documentos serão gerados!
+#### Opção B: Copiar do Excel ⭐
+1. No Excel, copie as linhas (Ctrl+C):
+   ```
+   Grupo 1	Subgrupo 1	100001	Exemplo de Descrição 1	Un
+   Grupo 2	Subgrupo 2	100002	Exemplo de Descrição 2	Un
+   ```
+2. No sistema, clique em **"📋 Copiar do Excel"**
+3. ✓ Itens adicionados automaticamente!
+
+📚 [Ver documentação completa do Copiar do Excel](docs/COPIAR_EXCEL.md)
+
+### Passo 3: Gerar Documentos
+
+1. Revise a lista de documentos
+2. Clique em **"📄 Gerar Documentos"**
+3. Escolha a pasta de destino
+4. ✓ Todos os documentos serão gerados!
+
+### Resultado
+
+Arquivos gerados no formato:
+```
+100001_Exemplo_de_Descrição_1.docx
+100002_Exemplo_de_Descrição_2.docx
+```
 
 ## 📁 Estrutura do Projeto
 
@@ -112,54 +126,50 @@ AutomacaoRPCMs/
 
 ## ✅ Funcionalidades Implementadas
 
-### Etapa 1 - Interface
-- ✅ Interface gráfica moderna com CustomTkinter
-- ✅ Seletor de Modo (Individual / Lote)
+### Interface Simplificada
+- ✅ Interface moderna com CustomTkinter
+- ✅ **Modo Lote** (único modo - mais simples)
 - ✅ Campos de entrada validados
 - ✅ Subgrupo como campo OPCIONAL
 - ✅ Validação de Nº Preço (apenas números)
 - ✅ Validação de caracteres inválidos na Descrição
-- ✅ Tabela de lista para Modo Lote
+- ✅ Tabela de lista interativa
 - ✅ Adicionar/remover itens da lista
 - ✅ Detecção de duplicatas (mesmo Nº Preço)
-- ✅ Área reservada para editor (placeholder temporário)
 - ✅ Botões de ação com feedback visual
 - ✅ Barra de status com cores
-- ✅ Verificação de existência do template
 
-### Etapa 3 - Automação
+### Copiar do Excel ⭐ NOVO
+- ✅ Cole dados diretamente do Excel (Ctrl+C → Copiar do Excel)
+- ✅ Lê formato TSV (Tab-Separated Values)
+- ✅ Validação automática de cada linha
+- ✅ Ignora cabeçalho automaticamente
+- ✅ Detecta e ignora duplicatas
+- ✅ Relatório detalhado de importação
+
+### Template Customizado ⭐ NOVO
+- ✅ Selecione qualquer arquivo .docx como template
+- ✅ Validação automática do template
+- ✅ Indicador visual do template atual
+- ✅ Suporte a múltiplos templates
+- ✅ Template padrão opcional
+
+### Geração de Documentos
 - ✅ **Geração REAL de documentos DOCX**
-- ✅ **Modo Individual funcionando**
 - ✅ **Modo Lote funcionando**
-- ✅ **Importação de Excel/CSV funcionando**
 - ✅ Processamento do template com variáveis `{{VAR}}`
-- ✅ Inserção da regulamentação HTML convertida
-- ✅ Conversor HTML→DOCX com preservação de formatação
-- ✅ Espaçamento 1,5 e Arial 10pt aplicados
-- ✅ Limpador de HTML do Word
 - ✅ Sistema de logging completo
-- ✅ Gerenciador de configurações
 - ✅ Tratamento de erros robusto
 - ✅ Callback de progresso para modo lote
 - ✅ Nome de arquivo: `NumPreco_Descricao.docx`
 
-## 🔮 Próximas Funcionalidades
+## 🔮 Possíveis Melhorias Futuras
 
-### Etapa 2 - Editor de Texto Rico ⭐ (PRÓXIMA)
-- CKEditor 5 embarcado via pywebview
-- Plugin PasteFromOffice (colar do Word/PDF com 100% formatação)
-- Espaçamento 1,5 automático e forçado
-- Arial 10pt automático e forçado
-- Suporte completo a listas multi-nível
-- Suporte completo a tabelas complexas
-- 13 testes críticos de validação
-
-### Etapa 4 - Testes e Refinamentos
-- Testes de integração completos
-- Testes com dados reais da Sabesp
-- Validação de compatibilidade (Word 2010-365)
-- Otimizações de performance
-- Correções finais
+- Editor de texto rico para descrições mais complexas
+- Importação direta de arquivo Excel (além do clipboard)
+- Histórico de templates recentes
+- Pré-visualização do documento antes de gerar
+- Exportação para outros formatos (PDF, etc)
 
 ## 🎨 Características da Interface
 
@@ -175,9 +185,8 @@ AutomacaoRPCMs/
 ### Campos Obrigatórios (*)
 - Grupo
 - Nº Preço (apenas números)
-- Descrição (sem caracteres especiais)
+- Descrição
 - Unidade
-- Regulamentação
 
 ### Campo Opcional
 - Subgrupo (pode ficar vazio)
@@ -185,7 +194,8 @@ AutomacaoRPCMs/
 ### Validações Especiais
 - **Nº Preço:** apenas números (ex: 123456)
 - **Descrição:** não permite caracteres inválidos para nome de arquivo: / \ : * ? " < > |
-- **Duplicatas:** não permite adicionar mesmo Nº Preço duas vezes no modo lote
+- **Duplicatas:** não permite adicionar mesmo Nº Preço duas vezes
+- **Template:** valida se é .docx e se pode ser aberto
 
 ## ⚙️ Configurações
 
@@ -197,8 +207,14 @@ As configurações de estilo estão em `src/gui/styles.py`:
 
 ## 🐛 Solução de Problemas
 
-### "Template não encontrado"
-→ Coloque `template_rpcm.docx` na pasta `templates/`
+### "Nenhum template selecionado"
+→ Clique em "📁 Selecionar Template" e escolha um arquivo .docx
+
+### "Template Inválido"
+→ Certifique-se de que o arquivo é .docx válido e pode ser aberto no Word
+
+### "Clipboard Vazio"
+→ Copie os dados do Excel primeiro (Ctrl+C) antes de clicar em "Copiar do Excel"
 
 ### Erro ao instalar CustomTkinter
 ```bash
@@ -213,30 +229,16 @@ python --version
 ```
 
 ### Mais ajuda
-- Consulte [docs/projeto/INICIO_RAPIDO.md](docs/projeto/INICIO_RAPIDO.md)
-- Veja [docs/planejamento/ETAPA_1_CONCLUIDA.md](docs/planejamento/ETAPA_1_CONCLUIDA.md)
+- 📚 [Documentação: Copiar do Excel](docs/COPIAR_EXCEL.md)
+- 📚 [Documentação: Selecionar Template](docs/SELECIONAR_TEMPLATE.md)
+- 📚 [Guia Rápido](docs/projeto/INICIO_RAPIDO.md)
 
 ## 📄 Licença
 
 Uso interno - Sabesp
 
-## 👨‍💻 Desenvolvimento
-
-Este projeto está sendo desenvolvido em 4 etapas. Consulte a documentação:
-
-- **[docs/planejamento/README_PLANEJAMENTO_FINAL.md](docs/planejamento/README_PLANEJAMENTO_FINAL.md)** - Planejamento completo
-- **[docs/planejamento/](docs/planejamento/)** - Detalhes de cada etapa
-
-**Status Atual:**
-- ✅ Etapa 1: Interface e Usabilidade (100%)
-- 📋 Etapa 2: Editor de Texto Rico (0% - PRÓXIMA)
-- ✅ Etapa 3: Funcionalidades de Automação (100%)
-- 📋 Etapa 4: Testes e Refinamentos (0%)
-
-**Observação:** A Etapa 3 foi concluída antes da Etapa 2. O editor atual é temporário (textbox simples). O editor rico PERFEITO será implementado na Etapa 2. Os conversores HTML→DOCX já estão prontos e testados.
-
 ---
 
-**Versão:** 2.0.0 (Etapas 1 e 3 concluídas)  
-**Última atualização:** 03/02/2026  
-**Progresso:** 50% (2/4 etapas)
+**Versão:** 3.0.0 (Sistema Simplificado)  
+**Última atualização:** 06/02/2026  
+**Funcionalidades:** Modo Lote + Copiar Excel + Template Customizado

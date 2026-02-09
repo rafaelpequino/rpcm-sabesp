@@ -17,14 +17,12 @@ class DocumentoRPCM:
         numero_preco: Número do preço (obrigatório, apenas números)
         descricao: Descrição do documento (obrigatório)
         unidade: Unidade de medida (obrigatório)
-        regulamentacao_html: Conteúdo HTML da regulamentação (obrigatório)
     """
     grupo: str
     subgrupo: str  # OPCIONAL - pode estar vazio
     numero_preco: str
     descricao: str
     unidade: str
-    regulamentacao_html: str
     
     def __post_init__(self):
         """Validações após inicialização"""
@@ -41,8 +39,7 @@ class DocumentoRPCM:
             'Grupo': self.grupo,
             'Número Preço': self.numero_preco,
             'Descrição': self.descricao,
-            'Unidade': self.unidade,
-            'Regulamentação': self.regulamentacao_html
+            'Unidade': self.unidade
         }
         
         vazios = [nome for nome, valor in campos_obrigatorios.items() 
@@ -117,6 +114,5 @@ class DocumentoRPCM:
             'SUBGRUPO': self.subgrupo,
             'N_PRECO': self.numero_preco,
             'DESCRICAO': self.descricao,
-            'UNIDADE': self.unidade,
-            'REGULAMENTACAO': self.regulamentacao_html
+            'UNIDADE': self.unidade
         }

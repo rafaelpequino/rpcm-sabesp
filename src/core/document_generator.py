@@ -4,8 +4,7 @@ Gerador de documentos RPCM
 Este módulo é responsável por:
 1. Carregar o template DOCX incluído no projeto
 2. Substituir variáveis {{VAR}} com dados fornecidos
-3. Inserir regulamentação HTML convertida para DOCX
-4. Gerar documentos individuais ou em lote
+3. Gerar documentos individuais ou em lote
 """
 
 from docxtpl import DocxTemplate
@@ -13,11 +12,8 @@ from docx import Document
 from pathlib import Path
 import logging
 from typing import Optional
-import tempfile
-import shutil
 
 from src.models.documento_rpcm import DocumentoRPCM
-from src.converters.html_to_docx import HTMLtoDOCXConverter
 
 logger = logging.getLogger(__name__)
 
@@ -95,26 +91,7 @@ class DocumentGenerator:
             doc_template.render(context)
             logger.debug("Template renderizado com variáveis")
             
-            # 4. Salvar temporariamente
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
-                temp_path = Path(temp_file.name)
-            
-            doc_template.save(str(temp_path))
-            logger.debug(f"Documento temporário salvo: {temp_path}")
-            
-            # 5. Reabrir com python-docx para inserir regulamentação
-            doc = Document(str(temp_path))
-            logger.debug("Documento reaberto para inserção da regulamentação")
-            
-            # 6. Encontrar marcador {{REGULAMENTACAO}} e substituir
-            self._inserir_regulamentacao(doc, dados.regulamentacao_html)
-            logger.debug("Regulamentação inserida")
-            
-            # 7. Aplicar formatação padrão
-            self._aplicar_formatacao_padrao(doc)
-            logger.debug("Formatação padrão aplicada")
-            
-            # 8. Determinar caminho final
+            # 4. Determinar caminho final
             if output_path is None:
                 output_dir = self.template_path.parent / "documentos_gerados"
                 output_dir.mkdir(exist_ok=True)
@@ -122,123 +99,15 @@ class DocumentGenerator:
             else:
                 output_path = Path(output_path)
             
-            # 9. Salvar documento final
-            doc.save(str(output_path))
+            # 5. Salvar documento final
+            doc_template.save(str(output_path))
             logger.info(f"Documento gerado com sucesso: {output_path}")
-            
-            # 10. Limpar arquivo temporário
-            temp_path.unlink()
-            logger.debug("Arquivo temporário removido")
             
             return str(output_path)
             
         except Exception as e:
             logger.error(f"Erro ao gerar documento: {str(e)}", exc_info=True)
             raise DocumentGenerationError(f"Falha na geração: {str(e)}") from e
-    
-    def _inserir_regulamentacao(self, doc: Document, html_content: str):
-        """
-        Encontra o marcador {{REGULAMENTACAO}} e substitui pelo conteúdo HTML
-        """
-        # Procurar em todos os parágrafos
-        marcador_encontrado = False
-        
-        for i, paragraph in enumerate(doc.paragraphs):
-            if '{{REGULAMENTACAO}}' in paragraph.text:
-                logger.debug(f"Marcador {{{{REGULAMENTACAO}}}} encontrado no parágrafo {i}")
-                marcador_encontrado = True
-                
-                # Remover o marcador
-                paragraph.text = paragraph.text.replace('{{REGULAMENTACAO}}', '')
-                
-                # Converter HTML para DOCX
-                converter = HTMLtoDOCXConverter()
-                temp_doc = Document()
-                temp_doc = converter.convert(html_content, temp_doc)
-                
-                # Inserir elementos após este parágrafo
-                self._inserir_elementos_apos_paragrafo(doc, i, temp_doc)
-                
-                logger.debug("Conteúdo da regulamentação inserido")
-                break
-        
-        # Se não encontrou o marcador, adicionar no final
-        if not marcador_encontrado:
-            logger.warning("Marcador {{REGULAMENTACAO}} não encontrado, adicionando no final")
-            converter = HTMLtoDOCXConverter()
-            doc = converter.convert(html_content, doc)
-    
-    def _inserir_elementos_apos_paragrafo(
-        self, 
-        doc_destino: Document, 
-        index: int, 
-        doc_origem: Document
-    ):
-        """
-        Insere todos os elementos de doc_origem após o parágrafo index em doc_destino
-        """
-        # Esta é uma operação complexa no python-docx
-        # Precisamos copiar os elementos XML diretamente
-        
-        paragrafo_referencia = doc_destino.paragraphs[index]
-        
-        # Obter o elemento XML do parágrafo
-        p_ref = paragrafo_referencia._element
-        
-        # Obter o body do documento
-        body = doc_destino._element.body
-        
-        # Inserir cada elemento do doc_origem após p_ref
-        for element in doc_origem._element.body:
-            # Importar o elemento para o documento destino
-            imported = body.append(element)
-            
-            # Encontrar posição de inserção
-            idx = list(body).index(p_ref) + 1
-            
-            # Mover para a posição correta
-            body.remove(imported)
-            body.insert(idx, imported)
-            
-            # Atualizar referência
-            p_ref = imported
-    
-    def _aplicar_formatacao_padrao(self, doc: Document):
-        """
-        Aplica formatação padrão Arial 10pt em todo o documento
-        EXCETO em títulos e cabeçalhos (que mantêm formatação original)
-        """
-        from docx.shared import Pt
-        
-        for paragraph in doc.paragraphs:
-            # Pular cabeçalhos e títulos (que têm estilo específico)
-            if paragraph.style.name.startswith('Heading') or paragraph.style.name == 'Title':
-                continue
-                
-            for run in paragraph.runs:
-                # Se o texto já tem formatação especial (negrito + maior que 10pt), manter
-                if run.bold and run.font.size and run.font.size > Pt(10):
-                    # Manter formatação de título
-                    continue
-                    
-                run.font.name = 'Arial'
-                run.font.size = Pt(10)
-        
-        # Aplicar também em tabelas (mas respeitar cabeçalhos em negrito)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            # Se está em negrito, pode ser cabeçalho - manter
-                            if run.bold:
-                                run.font.name = 'Arial'
-                                # Manter tamanho se for maior que 10pt
-                                if not run.font.size or run.font.size <= Pt(10):
-                                    run.font.size = Pt(10)
-                            else:
-                                run.font.name = 'Arial'
-                                run.font.size = Pt(10)
 
 
 class BatchDocumentGenerator:
@@ -343,13 +212,12 @@ class BatchDocumentGenerator:
         
         return resultados
     
-    def importar_excel(self, arquivo_excel: str, regulamentacao_html: str) -> int:
+    def importar_excel(self, arquivo_excel: str) -> int:
         """
         Importa lista de documentos de arquivo Excel/CSV
         
         Args:
             arquivo_excel: Caminho para arquivo .xlsx ou .csv
-            regulamentacao_html: HTML da regulamentação (comum a todos)
             
         Returns:
             Número de documentos importados
@@ -390,8 +258,7 @@ class BatchDocumentGenerator:
                         subgrupo=str(row['Subgrupo']).strip() if pd.notna(row['Subgrupo']) else '',
                         numero_preco=str(row['Nº Preço']).strip(),
                         descricao=str(row['Descrição']).strip(),
-                        unidade=str(row['Unidade']).strip(),
-                        regulamentacao_html=regulamentacao_html
+                        unidade=str(row['Unidade']).strip()
                     )
                     
                     self.adicionar_documento(doc)
