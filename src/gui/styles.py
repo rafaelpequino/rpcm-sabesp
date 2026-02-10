@@ -47,9 +47,9 @@ SPACING = {
 
 # Tamanhos da janela
 WINDOW = {
-    'min_width': 900,
+    'min_width': 1200,
     'min_height': 700,
-    'default_width': 1000,
+    'default_width': 1200,
     'default_height': 800,
 }
 

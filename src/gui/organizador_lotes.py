@@ -172,8 +172,9 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             command=self._verificar_destino,
             width=150,
             height=40,
-            fg_color=COLORS['warning'],
-            hover_color="#e0a800"
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['hover'],
+            text_color="white"
         )
         btn_verificar.pack(side="left", padx=5)
         
@@ -331,32 +332,34 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             ausentes = sorted(lista_numeros_str - numeros_encontrados)
             excedentes = sorted(numeros_encontrados - lista_numeros_str)
             
-            # Exibir resultado
+            # Exibir resultado no log
             self._adicionar_log(f"📊 RESULTADO DA VERIFICAÇÃO:\n", "info")
-            self._adicionar_log(f"\n1️⃣  Total de arquivos: {len(arquivos_encontrados)}", "sucesso")
-            self._adicionar_log(f"2️⃣  Números únicos encontrados: {len(numeros_encontrados)}", "sucesso")
-            self._adicionar_log(f"3️⃣  Total solicitado: {len(lista_numeros_str)}", "info")
-            self._adicionar_log(f"4️⃣  Conformes: {len(conformes)}", "sucesso")
+            self._adicionar_log(f"\n1️⃣  Total de arquivos na pasta de Destino (Lote): {len(arquivos_encontrados)}", "sucesso")
+            self._adicionar_log(f"2️⃣  Números ÚNICOS encontrados no Destino (Lote): {len(numeros_encontrados)}", "sucesso")
+            self._adicionar_log(f"3️⃣  Total de números solicitados: {len(lista_numeros_str)}", "info")
+            self._adicionar_log(f"4️⃣  Conformes (solicitados encontrados): {len(conformes)}", "sucesso")
             
             if ausentes:
-                self._adicionar_log(f"\n5️⃣  ❌ Ausentes: {len(ausentes)}", "erro")
+                self._adicionar_log(f"\n5️⃣  ❌ Ausentes (não encontrados): {len(ausentes)}", "erro")
                 self._adicionar_log(f"   {', '.join(ausentes)}", "erro")
             else:
-                self._adicionar_log(f"\n5️⃣  ✅ Ausentes: 0", "sucesso")
+                self._adicionar_log(f"\n5️⃣  ✅ Ausentes (não encontrados): 0", "sucesso")
             
             if excedentes:
-                self._adicionar_log(f"\n6️⃣  ⚠️ Excedentes: {len(excedentes)}", "aviso")
+                self._adicionar_log(f"\n6️⃣  ⚠️ Excedentes (não solicitados): {len(excedentes)}", "aviso")
                 self._adicionar_log(f"   {', '.join(excedentes)}", "aviso")
             else:
-                self._adicionar_log(f"\n6️⃣  ✅ Excedentes: 0", "sucesso")
+                self._adicionar_log(f"\n6️⃣  ✅ Excedentes (não solicitados): 0", "sucesso")
             
             # Verificar repetidos
             numeros_repetidos = {num: arqs for num, arqs in mapa_numeros_arquivos.items() if len(arqs) > 1}
             
             if numeros_repetidos:
-                self._adicionar_log(f"\n7️⃣  🔄 Números repetidos: {len(numeros_repetidos)}", "aviso")
+                self._adicionar_log(f"\n7️⃣  🔄 NÚMEROS REPETIDOS DETECTADOS: {len(numeros_repetidos)}", "aviso")
                 for numero, arquivos in sorted(numeros_repetidos.items()):
                     self._adicionar_log(f"   Número {numero}: {len(arquivos)} arquivos", "aviso")
+                    for arquivo in arquivos:
+                        self._adicionar_log(f"      • {arquivo}", "aviso")
             else:
                 self._adicionar_log(f"\n7️⃣  ✅ Números repetidos: 0", "sucesso")
             
@@ -364,11 +367,33 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             
             # Mensagem resumida
             resumo = f"VERIFICAÇÃO CONCLUÍDA\n\n"
-            resumo += f"Arquivos: {len(arquivos_encontrados)}\n"
-            resumo += f"Conformes: {len(conformes)}\n"
-            resumo += f"Ausentes: {len(ausentes)}\n"
-            resumo += f"Excedentes: {len(excedentes)}\n"
-            resumo += f"Repetidos: {len(numeros_repetidos)}"
+            resumo += f"1️⃣  Total de arquivos na pasta de Destino (Lote): {len(arquivos_encontrados)}\n"
+            resumo += f"2️⃣  Números ÚNICOS encontrados no Destino (Lote): {len(numeros_encontrados)}\n"
+            resumo += f"3️⃣  Total de números solicitados: {len(lista_numeros_str)}\n"
+            resumo += f"4️⃣  Conformes: {len(conformes)}\n"
+            
+            if ausentes:
+                resumo += f"\n5️⃣  ❌ Ausentes ({len(ausentes)}):\n{', '.join(ausentes)}\n"
+            else:
+                resumo += f"\n5️⃣  ✅ Ausentes: 0\n"
+            
+            if excedentes:
+                resumo += f"\n6️⃣  ⚠️ Excedentes ({len(excedentes)}):\n{', '.join(excedentes)}\n"
+            else:
+                resumo += f"\n6️⃣  ✅ Excedentes: 0\n"
+            
+            # Adicionar informações de números repetidos
+            if numeros_repetidos:
+                resumo += f"\n7️⃣  🔄 NÚMEROS REPETIDOS ({len(numeros_repetidos)}):\n"
+                for numero, arquivos in sorted(numeros_repetidos.items()):
+                    resumo += f"   • Número {numero}: {len(arquivos)} arquivos\n"
+                    for arquivo in arquivos:
+                        resumo += f"      - {arquivo}\n"
+            else:
+                resumo += f"\n7️⃣  ✅ Números repetidos: 0\n"
+            
+            if not ausentes and not excedentes:
+                resumo += "\n✅ Tudo está em conformidade!"
             
             messagebox.showinfo("Verificação Concluída", resumo)
             
@@ -473,10 +498,17 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             
             # Mensagem resumida
             resumo = f"Operação concluída!\n\n"
-            resumo += f"Arquivos copiados: {arquivos_copiados}\n"
-            resumo += f"Números únicos: {len(numeros_copiados)}\n"
-            resumo += f"Não encontrados: {len(numeros_nao_encontrados)}\n"
-            resumo += f"Erros: {erros}"
+            resumo += f"1️⃣  Arquivos copiados: {arquivos_copiados}\n"
+            resumo += f"2️⃣  Números únicos copiados: {len(numeros_copiados)}\n"
+            
+            if numeros_nao_encontrados:
+                resumo += f"\n3️⃣  ❌ Números não encontrados ({len(numeros_nao_encontrados)}):\n"
+                resumo += f"{', '.join(numeros_nao_encontrados)}\n"
+            else:
+                resumo += f"\n3️⃣  ✅ Números não encontrados: 0\n"
+            
+            if erros > 0:
+                resumo += f"\n⚠️ Erros: {erros}\n"
             
             messagebox.showinfo("Sucesso", resumo)
             

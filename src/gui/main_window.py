@@ -96,7 +96,7 @@ class MainWindow(ctk.CTk):
         
         titulo = ctk.CTkLabel(
             titulo_frame,
-            text="🏢 Sistema Unificado de Automações - Sabesp",
+            text="🏢 Sistema Unificado de Automações - RPCMS - EPC Sabesp",
             font=("Segoe UI", 18, "bold"),
             text_color=COLORS['primary']
         )
