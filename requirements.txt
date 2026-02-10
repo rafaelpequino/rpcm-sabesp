@@ -30,6 +30,7 @@ docx2pdf>=0.1.8
 # Utilidades
 Pillow>=10.0.0
 pyperclip>=1.8.0
+platformdirs>=3.0.0
 
 # Testes
 pytest>=7.4.0
