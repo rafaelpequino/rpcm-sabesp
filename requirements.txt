@@ -17,6 +17,16 @@ pandas>=2.0.0
 openpyxl>=3.1.0
 xlrd>=2.0.1
 
+# Conversão DOCX para PDF
+# 1. Microsoft Word COM - Melhor qualidade (requer MS Word instalado no Windows)
+pywin32>=306
+
+# 2. docx2pdf - Alta qualidade (gratuito e open source)
+docx2pdf>=0.1.8
+
+# 3. Aspose.Words - Alta qualidade (comercial com trial - opcional)
+# aspose-words>=24.1.0  # Descomente se quiser usar
+
 # Utilidades
 Pillow>=10.0.0
 pyperclip>=1.8.0

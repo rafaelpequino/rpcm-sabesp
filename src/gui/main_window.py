@@ -1,6 +1,6 @@
 """
-Janela principal da aplicação
-Interface simplificada - somente modo lote
+Janela principal da aplicação - Sistema Unificado de Automações
+Integra: Gerador de RPCM, Organizador de Lotes e Conversor DOCX → PDF
 """
 
 import customtkinter as ctk
@@ -12,6 +12,8 @@ import logging
 import pyperclip
 
 from src.gui.styles import COLORS, FONTS, SPACING, WINDOW, CTK_THEME
+from src.gui.organizador_lotes import OrganizadorLotesFrame
+from src.gui.conversor_pdf import ConversorPdfFrame
 from src.utils.validators import Validator
 from src.utils.logger_config import setup_logger
 from src.utils.config_manager import ConfigManager
@@ -23,7 +25,7 @@ logger = setup_logger()
 
 
 class MainWindow(ctk.CTk):
-    """Janela principal da aplicação Automação RPCM"""
+    """Janela principal da aplicação - Sistema Unificado de Automações - RPCMS - EPC Sabesp"""
     
     def __init__(self):
         super().__init__()
@@ -33,13 +35,14 @@ class MainWindow(ctk.CTk):
         ctk.set_default_color_theme(CTK_THEME['color_theme'])
         
         # Configurações da janela
-        self.title("Automação RPCM - Sabesp")
+        self.title("Sistema Unificado de Automações - RPCMS - EPC Sabesp")
         self.geometry(f"{WINDOW['default_width']}x{WINDOW['default_height']}")
         self.minsize(WINDOW['min_width'], WINDOW['min_height'])
         
         # Variáveis de controle
         self.lista_documentos = []  # Lista de documentos
         self.template_path = None  # Caminho do template selecionado
+        self.aba_atual = "rpcm"  # Aba ativa (rpcm, lotes, conversor)
         
         # Inicializar geradores
         self.generator = None
@@ -53,7 +56,7 @@ class MainWindow(ctk.CTk):
         if self.template_valido:
             self.update_status("Sistema pronto ✓", "success")
         else:
-            self.update_status("⚠ Template não encontrado - coloque template_rpcm.docx na pasta templates/", "error")
+            self.update_status("⚠ Template RPCM não encontrado - coloque template_rpcm.docx na pasta templates/", "error")
     
     def _inicializar_geradores(self) -> bool:
         """Inicializa os geradores de documentos"""
@@ -80,11 +83,136 @@ class MainWindow(ctk.CTk):
             return False
     
     def _criar_interface(self):
-        """Cria todos os componentes da interface"""
+        """Cria todos os componentes da interface com navegação por abas"""
         
-        # Container principal com scroll
-        self.main_container = ctk.CTkScrollableFrame(self)
-        self.main_container.pack(fill="both", expand=True, padx=SPACING['padding'], pady=SPACING['padding'])
+        # ===== NAVEGAÇÃO SUPERIOR (NAVBAR) =====
+        self.navbar = ctk.CTkFrame(self, height=70)
+        self.navbar.pack(fill="x", padx=0, pady=0)
+        self.navbar.pack_propagate(False)
+        
+        # Título principal
+        titulo_frame = ctk.CTkFrame(self.navbar)
+        titulo_frame.pack(side="left", padx=20, pady=10)
+        
+        titulo = ctk.CTkLabel(
+            titulo_frame,
+            text="🏢 Sistema Unificado de Automações - Sabesp",
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['primary']
+        )
+        titulo.pack()
+        
+        # Botões de navegação
+        botoes_frame = ctk.CTkFrame(self.navbar)
+        botoes_frame.pack(side="right", padx=20, pady=10)
+        
+        self.btn_nav_rpcm = ctk.CTkButton(
+            botoes_frame,
+            text="📄 Gerador de RPCM",
+            command=lambda: self._trocar_aba("rpcm"),
+            width=180,
+            height=45,
+            font=FONTS['button'],
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['hover']
+        )
+        self.btn_nav_rpcm.pack(side="left", padx=5)
+        
+        self.btn_nav_conversor = ctk.CTkButton(
+            botoes_frame,
+            text="🔄 Conversor DOCX → PDF",
+            command=lambda: self._trocar_aba("conversor"),
+            width=180,
+            height=45,
+            font=FONTS['button'],
+            fg_color=COLORS['secondary'],
+            hover_color=COLORS['border'],
+            text_color=COLORS['text']
+        )
+        self.btn_nav_conversor.pack(side="left", padx=5)
+        
+        self.btn_nav_lotes = ctk.CTkButton(
+            botoes_frame,
+            text="📁 Organizador de Lotes",
+            command=lambda: self._trocar_aba("lotes"),
+            width=180,
+            height=45,
+            font=FONTS['button'],
+            fg_color=COLORS['secondary'],
+            hover_color=COLORS['border'],
+            text_color=COLORS['text']
+        )
+        self.btn_nav_lotes.pack(side="left", padx=5)
+        
+        # ===== BARRA DE STATUS (criar antes para poder usar update_status) =====
+        self._criar_barra_status()
+        
+        # ===== CONTAINER PRINCIPAL PARA ABAS =====
+        self.container_abas = ctk.CTkFrame(self)
+        self.container_abas.pack(fill="both", expand=True, before=self.status_frame)
+        
+        # ===== CRIAR AS ABAS =====
+        # Aba RPCM (gerador de documentos)
+        self.frame_rpcm = ctk.CTkScrollableFrame(self.container_abas)
+        self._criar_conteudo_rpcm()
+        
+        # Aba Organizador de Lotes
+        self.frame_lotes = OrganizadorLotesFrame(self.container_abas)
+        
+        # Aba Conversor PDF
+        self.frame_conversor = ConversorPdfFrame(self.container_abas)
+        
+        # Mostrar aba inicial (RPCM)
+        self._trocar_aba("rpcm")
+    
+    def _trocar_aba(self, aba: str):
+        """Troca a aba ativa"""
+        self.aba_atual = aba
+        
+        # Esconder todas as abas
+        self.frame_rpcm.pack_forget()
+        self.frame_lotes.pack_forget()
+        self.frame_conversor.pack_forget()
+        
+        # Resetar cores dos botões
+        self.btn_nav_rpcm.configure(
+            fg_color=COLORS['secondary'],
+            text_color=COLORS['text']
+        )
+        self.btn_nav_lotes.configure(
+            fg_color=COLORS['secondary'],
+            text_color=COLORS['text']
+        )
+        self.btn_nav_conversor.configure(
+            fg_color=COLORS['secondary'],
+            text_color=COLORS['text']
+        )
+        
+        # Mostrar aba selecionada e destacar botão
+        if aba == "rpcm":
+            self.frame_rpcm.pack(fill="both", expand=True, padx=SPACING['padding'], pady=SPACING['padding'])
+            self.btn_nav_rpcm.configure(
+                fg_color=COLORS['primary'],
+                text_color=COLORS['secondary']
+            )
+            self.update_status("Gerador de RPCM ativo", "info")
+        elif aba == "lotes":
+            self.frame_lotes.pack(fill="both", expand=True)
+            self.btn_nav_lotes.configure(
+                fg_color=COLORS['primary'],
+                text_color=COLORS['secondary']
+            )
+            self.update_status("Organizador de Lotes ativo", "info")
+        elif aba == "conversor":
+            self.frame_conversor.pack(fill="both", expand=True)
+            self.btn_nav_conversor.configure(
+                fg_color=COLORS['primary'],
+                text_color=COLORS['secondary']
+            )
+            self.update_status("Conversor DOCX → PDF ativo", "info")
+    
+    def _criar_conteudo_rpcm(self):
+        """Cria o conteúdo da aba de Gerador de RPCM"""
         
         # 1. Seleção de Template
         self._criar_secao_template()
@@ -100,13 +228,10 @@ class MainWindow(ctk.CTk):
         
         # 5. Botões de Ação
         self._criar_botoes_acao()
-        
-        # 6. Barra de Status
-        self._criar_barra_status()
     
     def _criar_secao_template(self):
         """Cria a seção de seleção de template"""
-        frame = ctk.CTkFrame(self.main_container)
+        frame = ctk.CTkFrame(self.frame_rpcm)
         frame.pack(fill="x", pady=(0, SPACING['margin']))
         
         label = ctk.CTkLabel(
@@ -157,7 +282,7 @@ class MainWindow(ctk.CTk):
     
     def _criar_campos_entrada(self):
         """Cria os campos de entrada de dados"""
-        frame = ctk.CTkFrame(self.main_container)
+        frame = ctk.CTkFrame(self.frame_rpcm)
         frame.pack(fill="x", pady=SPACING['margin'])
         
         label = ctk.CTkLabel(
@@ -232,7 +357,7 @@ class MainWindow(ctk.CTk):
     
     def _criar_botao_adicionar(self):
         """Cria o botão Adicionar à Lista e Copiar do Excel"""
-        self.frame_adicionar = ctk.CTkFrame(self.main_container)
+        self.frame_adicionar = ctk.CTkFrame(self.frame_rpcm)
         self.frame_adicionar.pack(fill="x", pady=SPACING['margin'])
         
         # Container para os botões lado a lado
@@ -263,7 +388,7 @@ class MainWindow(ctk.CTk):
     
     def _criar_tabela_lista(self):
         """Cria a tabela de lista de documentos"""
-        self.frame_lista = ctk.CTkFrame(self.main_container)
+        self.frame_lista = ctk.CTkFrame(self.frame_rpcm)
         self.frame_lista.pack(fill="both", expand=True, pady=SPACING['margin'])
         
         label = ctk.CTkLabel(
@@ -299,7 +424,7 @@ class MainWindow(ctk.CTk):
     
     def _criar_botoes_acao(self):
         """Cria os botões de ação principais"""
-        self.frame_botoes = ctk.CTkFrame(self.main_container)
+        self.frame_botoes = ctk.CTkFrame(self.frame_rpcm)
         self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
         
         # Botão Gerar Documentos

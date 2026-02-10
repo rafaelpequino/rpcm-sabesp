@@ -22,18 +22,19 @@ COLORS = {
     'hover': '#0052A3',
     'disabled': '#999999',
     'placeholder': '#999999',
+    'text_secondary': '#666666',
 }
 
 # Configurações de fonte
 FONTS = {
     'family': 'Segoe UI',
     'fallback': 'Arial',
-    'title': ('Segoe UI', 14, 'bold'),
-    'subtitle': ('Segoe UI', 12, 'bold'),
-    'label': ('Segoe UI', 10),
-    'input': ('Segoe UI', 10),
-    'button': ('Segoe UI', 10, 'bold'),
-    'small': ('Segoe UI', 9),
+    'title': ('Segoe UI', 18, 'bold'),
+    'subtitle': ('Segoe UI', 14, 'bold'),
+    'label': ('Segoe UI', 12),
+    'input': ('Segoe UI', 11),
+    'button': ('Segoe UI', 11, 'bold'),
+    'small': ('Segoe UI', 10),
 }
 
 # Espaçamentos
