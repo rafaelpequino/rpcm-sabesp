@@ -12,17 +12,13 @@ class DocumentoRPCM:
     Representa os dados de um documento RPCM
     
     Attributes:
-        grupo: Grupo do documento (obrigatório)
-        subgrupo: Subgrupo do documento (OPCIONAL - pode estar vazio)
-        numero_preco: Número do preço (obrigatório, apenas números)
         descricao: Descrição do documento (obrigatório)
         unidade: Unidade de medida (obrigatório)
+        numero_preco: Número do preço (obrigatório, apenas números)
     """
-    grupo: str
-    subgrupo: str  # OPCIONAL - pode estar vazio
-    numero_preco: str
     descricao: str
     unidade: str
+    numero_preco: str
     
     def __post_init__(self):
         """Validações após inicialização"""
@@ -32,14 +28,11 @@ class DocumentoRPCM:
     def _validar_campos_obrigatorios(self):
         """
         Valida se campos obrigatórios estão preenchidos
-        
-        IMPORTANTE: Subgrupo é OPCIONAL e pode estar vazio!
         """
         campos_obrigatorios = {
-            'Grupo': self.grupo,
-            'Número Preço': self.numero_preco,
             'Descrição': self.descricao,
-            'Unidade': self.unidade
+            'Unidade': self.unidade,
+            'Número Preço': self.numero_preco
         }
         
         vazios = [nome for nome, valor in campos_obrigatorios.items() 
@@ -50,11 +43,9 @@ class DocumentoRPCM:
     
     def _limpar_campos(self):
         """Remove espaços em branco extras"""
-        self.grupo = self.grupo.strip()
-        self.subgrupo = self.subgrupo.strip() if self.subgrupo else ""  # Pode estar vazio
-        self.numero_preco = self.numero_preco.strip()
         self.descricao = self.descricao.strip()
         self.unidade = self.unidade.strip()
+        self.numero_preco = self.numero_preco.strip()
     
     def get_nome_arquivo(self) -> str:
         """
@@ -110,9 +101,7 @@ class DocumentoRPCM:
             Dicionário com variáveis em uppercase para template
         """
         return {
-            'GRUPO': self.grupo,
-            'SUBGRUPO': self.subgrupo,
-            'N_PRECO': self.numero_preco,
             'DESCRICAO': self.descricao,
-            'UNIDADE': self.unidade
+            'UNIDADE': self.unidade,
+            'N_PRECO': self.numero_preco
         }

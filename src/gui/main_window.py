@@ -296,22 +296,16 @@ class MainWindow(ctk.CTk):
         campos_frame = ctk.CTkFrame(frame)
         campos_frame.pack(fill="x", padx=10, pady=10)
         
-        # Grupo *
-        self._criar_campo(campos_frame, "Grupo:", "grupo", obrigatorio=True)
-        
-        # Subgrupo (opcional)
-        self._criar_campo(campos_frame, "Subgrupo:", "subgrupo", obrigatorio=False)
-        
-        # Nº Preço *
-        self._criar_campo(campos_frame, "Nº Preço:", "numero_preco", obrigatorio=True, 
-                         placeholder="123456")
-        
         # Descrição *
         self._criar_campo(campos_frame, "Descrição:", "descricao", obrigatorio=True)
         
         # Unidade *
         self._criar_campo(campos_frame, "Unidade:", "unidade", obrigatorio=True, 
                          placeholder="m, un, kg, etc")
+        
+        # Nº Preço *
+        self._criar_campo(campos_frame, "Nº Preço (Código):", "numero_preco", obrigatorio=True, 
+                         placeholder="400726")
     
     def _criar_campo(self, parent, label_text: str, field_name: str, 
                      obrigatorio: bool = False, placeholder: str = ""):
@@ -389,7 +383,7 @@ class MainWindow(ctk.CTk):
     def _criar_tabela_lista(self):
         """Cria a tabela de lista de documentos"""
         self.frame_lista = ctk.CTkFrame(self.frame_rpcm)
-        self.frame_lista.pack(fill="both", expand=True, pady=SPACING['margin'])
+        self.frame_lista.pack(fill="x", pady=SPACING['margin'])
         
         label = ctk.CTkLabel(
             self.frame_lista, 
@@ -398,16 +392,16 @@ class MainWindow(ctk.CTk):
         )
         label.pack(pady=SPACING['small_margin'], anchor="w", padx=10)
         
-        # Frame da tabela com scroll
-        self.tabela_scroll = ctk.CTkScrollableFrame(self.frame_lista, height=200)
-        self.tabela_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        # Frame da tabela sem scroll interno
+        self.tabela_container = ctk.CTkFrame(self.frame_lista)
+        self.tabela_container.pack(fill="x", padx=10, pady=10)
         
         # Cabeçalho da tabela
-        header = ctk.CTkFrame(self.tabela_scroll)
+        header = ctk.CTkFrame(self.tabela_container)
         header.pack(fill="x", pady=(0, 5))
         
-        headers = ["Nº Preço", "Grupo", "Subgrupo", "Descrição", "Unidade", "Ação"]
-        widths = [100, 120, 120, 200, 80, 80]
+        headers = ["Descrição", "Unidade", "Nº Preço", "Ação"]
+        widths = [350, 100, 120, 80]
         
         for header_text, width in zip(headers, widths):
             label = ctk.CTkLabel(
@@ -419,8 +413,8 @@ class MainWindow(ctk.CTk):
             label.pack(side="left", padx=2)
         
         # Container para as linhas
-        self.linhas_container = ctk.CTkFrame(self.tabela_scroll)
-        self.linhas_container.pack(fill="both", expand=True)
+        self.linhas_container = ctk.CTkFrame(self.tabela_container)
+        self.linhas_container.pack(fill="x")
     
     def _criar_botoes_acao(self):
         """Cria os botões de ação principais"""
@@ -473,15 +467,13 @@ class MainWindow(ctk.CTk):
     def _on_adicionar_lista(self):
         """Handler para adicionar item à lista (Modo Lote)"""
         # Coletar dados dos campos
-        grupo = self.entry_grupo.get().strip()
-        subgrupo = self.entry_subgrupo.get().strip()
-        numero_preco = self.entry_numero_preco.get().strip()
         descricao = self.entry_descricao.get().strip()
         unidade = self.entry_unidade.get().strip()
+        numero_preco = self.entry_numero_preco.get().strip()
         
         # Validar campos
         valid, errors = Validator.validate_all_fields(
-            grupo, subgrupo, numero_preco, descricao, unidade
+            descricao, unidade, numero_preco
         )
         
         if not valid:
@@ -502,22 +494,20 @@ class MainWindow(ctk.CTk):
         
         # Adicionar à lista
         documento = {
-            'grupo': grupo,
-            'subgrupo': subgrupo,
-            'numero_preco': numero_preco,
             'descricao': descricao,
-            'unidade': unidade
+            'unidade': unidade,
+            'numero_preco': numero_preco
         }
         self.lista_documentos.append(documento)
         
         # Adicionar à tabela visual
         self._adicionar_linha_tabela(documento)
         
-        # Limpar campos (exceto regulamentação)
+        # Limpar campos
         self._limpar_campos_dados()
         
         # Focar no primeiro campo
-        self.entry_grupo.focus()
+        self.entry_descricao.focus()
         
         self.update_status(f"Item adicionado: {numero_preco} ({len(self.lista_documentos)} na lista)", "success")
     
@@ -555,24 +545,22 @@ class MainWindow(ctk.CTk):
                 # Separar por TAB
                 colunas = linha.split('\t')
                 
-                # Verificar se tem 5 colunas (Grupo, Subgrupo, Nº Preço, Descrição, Unidade)
-                if len(colunas) < 5:
-                    erros.append(f"Linha {i}: formato inválido (esperado 5 colunas, encontrado {len(colunas)})")
+                # Verificar se tem 3 colunas (Descrição, Unidade, Nº Preço)
+                if len(colunas) < 3:
+                    erros.append(f"Linha {i}: formato inválido (esperado 3 colunas, encontrado {len(colunas)})")
                     continue
                 
-                grupo = colunas[0].strip()
-                subgrupo = colunas[1].strip()
+                descricao = colunas[0].strip()
+                unidade = colunas[1].strip()
                 numero_preco = colunas[2].strip()
-                descricao = colunas[3].strip()
-                unidade = colunas[4].strip()
                 
                 # Pular linha de cabeçalho (se existir)
-                if numero_preco.upper() in ['Nº PREÇO', 'N° PREÇO', 'NUMERO PRECO', 'N PRECO']:
+                if descricao.upper() in ['DESCRIÇÃO', 'DESCRICAO'] or numero_preco.upper() in ['CÓD', 'COD', 'CÓDIGO', 'CODIGO']:
                     continue
                 
                 # Validar campos obrigatórios
                 valid, validation_errors = Validator.validate_all_fields(
-                    grupo, subgrupo, numero_preco, descricao, unidade
+                    descricao, unidade, numero_preco
                 )
                 
                 if not valid:
@@ -592,11 +580,9 @@ class MainWindow(ctk.CTk):
                 
                 # Adicionar à lista
                 documento = {
-                    'grupo': grupo,
-                    'subgrupo': subgrupo,
-                    'numero_preco': numero_preco,
                     'descricao': descricao,
-                    'unidade': unidade
+                    'unidade': unidade,
+                    'numero_preco': numero_preco
                 }
                 self.lista_documentos.append(documento)
                 self._adicionar_linha_tabela(documento)
@@ -722,13 +708,11 @@ class MainWindow(ctk.CTk):
         linha.pack(fill="x", pady=2)
         
         # Células
-        widths = [100, 120, 120, 200, 80, 80]
+        widths = [350, 100, 120, 80]
         valores = [
-            documento['numero_preco'],
-            documento['grupo'],
-            documento['subgrupo'] or "(vazio)",
             documento['descricao'],
-            documento['unidade']
+            documento['unidade'],
+            documento['numero_preco']
         ]
         
         for valor, width in zip(valores, widths[:-1]):
@@ -766,12 +750,10 @@ class MainWindow(ctk.CTk):
         self.update_status(f"Item removido: {numero_preco} ({len(self.lista_documentos)} na lista)", "info")
     
     def _limpar_campos_dados(self):
-        """Limpa apenas os campos de dados (mantém regulamentação)"""
-        self.entry_grupo.delete(0, 'end')
-        self.entry_subgrupo.delete(0, 'end')
-        self.entry_numero_preco.delete(0, 'end')
+        """Limpa os campos de dados"""
         self.entry_descricao.delete(0, 'end')
         self.entry_unidade.delete(0, 'end')
+        self.entry_numero_preco.delete(0, 'end')
     
     def _gerar_documentos_lote(self):
         """Gera múltiplos documentos"""
@@ -802,11 +784,9 @@ class MainWindow(ctk.CTk):
             # Adicionar todos os documentos ao batch generator
             for doc_dict in self.lista_documentos:
                 documento = DocumentoRPCM(
-                    grupo=doc_dict['grupo'],
-                    subgrupo=doc_dict.get('subgrupo', ''),  # Pode estar vazio
-                    numero_preco=doc_dict['numero_preco'],
                     descricao=doc_dict['descricao'],
-                    unidade=doc_dict['unidade']
+                    unidade=doc_dict['unidade'],
+                    numero_preco=doc_dict['numero_preco']
                 )
                 self.batch_generator.adicionar_documento(documento)
             
@@ -890,11 +870,9 @@ class MainWindow(ctk.CTk):
             # Adicionar à lista visual
             for documento in self.batch_generator.documentos:
                 doc_dict = {
-                    'grupo': documento.grupo,
-                    'subgrupo': documento.subgrupo,
-                    'numero_preco': documento.numero_preco,
                     'descricao': documento.descricao,
-                    'unidade': documento.unidade
+                    'unidade': documento.unidade,
+                    'numero_preco': documento.numero_preco
                 }
                 self.lista_documentos.append(doc_dict)
                 self._adicionar_linha_tabela(doc_dict)

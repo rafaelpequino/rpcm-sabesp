@@ -70,7 +70,7 @@ Clique em qualquer botão para acessar a funcionalidade desejada.
 
 1. Clique em **"📁 Selecionar Template"**
 2. Escolha um arquivo .docx com as variáveis:
-   - `{{GRUPO}}`, `{{SUBGRUPO}}`, `{{N_PRECO}}`, `{{DESCRICAO}}`, `{{UNIDADE}}`
+   - `{{DESCRICAO}}`, `{{UNIDADE}}`, `{{N_PRECO}}`
 3. Veja confirmação: **"✓ Template carregado"**
 
 📚 [Ver documentação completa de templates](docs/SELECIONAR_TEMPLATE.md)
@@ -79,18 +79,17 @@ Clique em qualquer botão para acessar a funcionalidade desejada.
 
 #### Opção A: Manual
 1. Preencha os campos:
-   - Grupo *
-   - Subgrupo (opcional)
-   - Nº Preço * (apenas números, ex: 123456)
    - Descrição *
-   - Unidade *
+   - Unidade * (ex: m, un, kg)
+   - Nº Preço (Código) * (apenas números, ex: 400726)
 2. Clique em **"➕ Adicionar à Lista"**
 
 #### Opção B: Copiar do Excel ⭐
 1. No Excel, copie as linhas (Ctrl+C):
    ```
-   Grupo 1	Subgrupo 1	100001	Exemplo de Descrição 1	Un
-   Grupo 2	Subgrupo 2	100002	Exemplo de Descrição 2	Un
+   Descrição	Unidade	Cód
+   Esteira - CT DN400 SERRA TERMAS - PIRAT.	GB	400726
+   Esteira - SES Cond Vitória (Beira Rio)	GB	400725
    ```
 2. No sistema, clique em **"📋 Copiar do Excel"**
 3. ✓ Itens adicionados automaticamente!
@@ -108,8 +107,8 @@ Clique em qualquer botão para acessar a funcionalidade desejada.
 
 Arquivos gerados no formato:
 ```
-100001_Exemplo_de_Descrição_1.docx
-100002_Exemplo_de_Descrição_2.docx
+400726_Esteira_-_CT_DN400_SERRA_TERMAS_-_PIRAT.docx
+400725_Esteira_-_SES_Cond_Vitoria_(Beira_Rio).docx
 ```
 
 ---
@@ -250,16 +249,12 @@ AutomacaoRPCMs/
 ## 📝 Validações do Gerador RPCM
 
 ### Campos Obrigatórios (*)
-- Grupo
-- Nº Preço (apenas números)
 - Descrição
 - Unidade
-
-### Campo Opcional
-- Subgrupo (pode ficar vazio)
+- Nº Preço (Código) - apenas números
 
 ### Validações Especiais
-- **Nº Preço:** apenas números (ex: 123456)
+- **Nº Preço:** apenas números (ex: 400726)
 - **Descrição:** não permite caracteres inválidos para nome de arquivo: / \ : * ? " < > |
 - **Duplicatas:** não permite adicionar mesmo Nº Preço duas vezes
 - **Template:** valida se é .docx e se pode ser aberto

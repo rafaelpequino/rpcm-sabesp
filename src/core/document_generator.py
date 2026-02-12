@@ -223,7 +223,7 @@ class BatchDocumentGenerator:
             Número de documentos importados
             
         Formato esperado do Excel:
-        | Grupo | Subgrupo | Nº Preço | Descrição | Unidade |
+        | Descrição | Unidade | Nº Preço |
         """
         import pandas as pd
         
@@ -235,17 +235,13 @@ class BatchDocumentGenerator:
                 df = pd.read_excel(arquivo_excel)
             
             # Validar colunas
-            colunas_necessarias = ['Grupo', 'Nº Preço', 'Descrição', 'Unidade']
+            colunas_necessarias = ['Descrição', 'Unidade', 'Nº Preço']
             colunas_faltando = [col for col in colunas_necessarias if col not in df.columns]
             
             if colunas_faltando:
                 raise ValueError(
                     f"Colunas faltando no arquivo: {', '.join(colunas_faltando)}"
                 )
-            
-            # Adicionar coluna Subgrupo se não existir
-            if 'Subgrupo' not in df.columns:
-                df['Subgrupo'] = ''
             
             # Importar cada linha
             importados = 0
@@ -254,11 +250,9 @@ class BatchDocumentGenerator:
             for idx, row in df.iterrows():
                 try:
                     doc = DocumentoRPCM(
-                        grupo=str(row['Grupo']).strip(),
-                        subgrupo=str(row['Subgrupo']).strip() if pd.notna(row['Subgrupo']) else '',
-                        numero_preco=str(row['Nº Preço']).strip(),
                         descricao=str(row['Descrição']).strip(),
-                        unidade=str(row['Unidade']).strip()
+                        unidade=str(row['Unidade']).strip(),
+                        numero_preco=str(row['Nº Preço']).strip()
                     )
                     
                     self.adicionar_documento(doc)

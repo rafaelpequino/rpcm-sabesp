@@ -60,7 +60,10 @@ class Validator:
     @staticmethod
     def validate_filename(value: str) -> Tuple[bool, str]:
         """
-        Valida se a descrição não contém caracteres inválidos para nome de arquivo
+        Valida se a descrição está preenchida
+        
+        Nota: Caracteres especiais são permitidos na descrição.
+        Eles serão automaticamente removidos ao gerar o nome do arquivo.
         
         Args:
             value: Descrição a validar
@@ -71,61 +74,23 @@ class Validator:
         if not value or not value.strip():
             return False, "Descrição é obrigatória"
         
-        # Verificar caracteres inválidos
-        invalid_chars_found = []
-        for char in Validator.INVALID_FILENAME_CHARS:
-            if char in value:
-                invalid_chars_found.append(char)
-        
-        if invalid_chars_found:
-            chars_str = ', '.join([f'"{c}"' for c in invalid_chars_found])
-            return False, f"Descrição contém caracteres inválidos: {chars_str}"
-        
+        # Permitir qualquer caractere - a limpeza será feita ao gerar o arquivo
         return True, ""
     
     @staticmethod
-    def validate_subgrupo(value: str) -> Tuple[bool, str]:
-        """
-        Valida subgrupo (campo OPCIONAL)
-        
-        Args:
-            value: Subgrupo a validar
-            
-        Returns:
-            Tupla (is_valid, error_message) - sempre válido pois é opcional
-        """
-        # Subgrupo é opcional, sempre válido
-        return True, ""
-    
-    @staticmethod
-    def validate_all_fields(grupo: str, subgrupo: str, numero_preco: str, 
-                          descricao: str, unidade: str) -> Tuple[bool, list]:
+    def validate_all_fields(descricao: str, unidade: str, numero_preco: str) -> Tuple[bool, list]:
         """
         Valida todos os campos de uma vez
         
         Args:
-            grupo: Grupo do documento
-            subgrupo: Subgrupo (opcional)
-            numero_preco: Número de preço
             descricao: Descrição
             unidade: Unidade
+            numero_preco: Número de preço
             
         Returns:
             Tupla (all_valid, list_of_errors)
         """
         errors = []
-        
-        # Validar Grupo (obrigatório)
-        valid, msg = Validator.validate_required(grupo, "Grupo")
-        if not valid:
-            errors.append(msg)
-        
-        # Subgrupo é opcional, não validar
-        
-        # Validar Número de Preço
-        valid, msg = Validator.validate_numero_preco(numero_preco)
-        if not valid:
-            errors.append(msg)
         
         # Validar Descrição
         valid, msg = Validator.validate_filename(descricao)
@@ -134,6 +99,11 @@ class Validator:
         
         # Validar Unidade (obrigatório)
         valid, msg = Validator.validate_required(unidade, "Unidade")
+        if not valid:
+            errors.append(msg)
+        
+        # Validar Número de Preço
+        valid, msg = Validator.validate_numero_preco(numero_preco)
         if not valid:
             errors.append(msg)
         
