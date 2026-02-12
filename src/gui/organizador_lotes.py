@@ -16,13 +16,41 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
     """Frame para organizar RPCMs por lote"""
     
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            fg_color="transparent",
+            scrollbar_button_color=COLORS['primary'],
+            scrollbar_button_hover_color=COLORS['hover']
+        )
+        
+        # Configurar scroll suave
+        self._parent_canvas.configure(yscrollincrement=20)
+        self._configurar_scroll_suave()
         
         # Variáveis
         self.pasta_origem = None
         self.pasta_destino = None
         
         self._criar_interface()
+    
+    def _configurar_scroll_suave(self):
+        """Configura scroll suave com mouse wheel"""
+        def _on_mousewheel(event):
+            # Scroll mais suave e rápido
+            self._parent_canvas.yview_scroll(int(-1 * (event.delta / 60)), "units")
+        
+        # Bind para o canvas
+        self._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Unbind quando sair da janela para não conflitar
+        def _unbind_mousewheel(event):
+            self._parent_canvas.unbind_all("<MouseWheel>")
+        
+        def _bind_mousewheel(event):
+            self._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        self._parent_canvas.bind("<Leave>", _unbind_mousewheel)
+        self._parent_canvas.bind("<Enter>", _bind_mousewheel)
     
     def _criar_interface(self):
         """Cria a interface do organizador"""

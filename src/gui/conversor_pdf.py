@@ -8,6 +8,8 @@ from tkinter import filedialog, messagebox
 import threading
 from pathlib import Path
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 from src.gui.styles import COLORS, FONTS, SPACING
 
@@ -36,7 +38,16 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
     """Frame para converter DOCX para PDF"""
     
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            fg_color="transparent",
+            scrollbar_button_color=COLORS['primary'],
+            scrollbar_button_hover_color=COLORS['hover']
+        )
+        
+        # Configurar scroll suave
+        self._parent_canvas.configure(yscrollincrement=20)
+        self._configurar_scroll_suave()
         
         # Variáveis
         self.pasta_entrada = None
@@ -49,6 +60,25 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
         self.metodos_disponiveis = self._detectar_metodos()
         
         self._criar_interface()
+    
+    def _configurar_scroll_suave(self):
+        """Configura scroll suave com mouse wheel"""
+        def _on_mousewheel(event):
+            # Scroll mais suave e rápido
+            self._parent_canvas.yview_scroll(int(-1 * (event.delta / 60)), "units")
+        
+        # Bind para o canvas
+        self._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Unbind quando sair da janela para não conflitar
+        def _unbind_mousewheel(event):
+            self._parent_canvas.unbind_all("<MouseWheel>")
+        
+        def _bind_mousewheel(event):
+            self._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        self._parent_canvas.bind("<Leave>", _unbind_mousewheel)
+        self._parent_canvas.bind("<Enter>", _bind_mousewheel)
     
     def _detectar_metodos(self):
         """Detecta métodos de conversão disponíveis"""
@@ -352,19 +382,48 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
         self.label_progresso.configure(text=texto)
         self.update()
     
-    def _converter_com_word_com(self, arquivo_docx, arquivo_pdf):
-        """Converte usando Word COM"""
+    def _converter_com_word_com(self, arquivo_docx, arquivo_pdf, word_instance=None):
+        """Converte usando Word COM com configurações otimizadas"""
         try:
-            word = win32com.client.Dispatch("Word.Application")
-            word.Visible = False
+            # Se não foi passada uma instância, criar uma nova
+            fechar_word = False
+            if word_instance is None:
+                word = win32com.client.Dispatch("Word.Application")
+                word.Visible = False
+                fechar_word = True
+            else:
+                word = word_instance
             
+            # Abrir documento
             doc = word.Documents.Open(str(arquivo_docx))
-            doc.SaveAs(str(arquivo_pdf), FileFormat=17)
-            doc.Close()
-            word.Quit()
+            
+            # Usar ExportAsFixedFormat com configurações otimizadas
+            # Isso preserva melhor a formatação do que SaveAs
+            doc.ExportAsFixedFormat(
+                OutputFileName=str(arquivo_pdf),
+                ExportFormat=17,  # wdExportFormatPDF = 17
+                OpenAfterExport=False,
+                OptimizeFor=0,  # wdExportOptimizeForPrint = 0 (melhor qualidade)
+                CreateBookmarks=0,  # wdExportCreateNoBookmarks = 0
+                DocStructureTags=True,  # Preservar estrutura
+                BitmapMissingFonts=True,  # Converter fontes ausentes em bitmap
+                UseISO19005_1=False  # Não usar PDF/A
+            )
+            
+            doc.Close(SaveChanges=False)
+            
+            # Só fechar o Word se foi criado nesta chamada
+            if fechar_word:
+                word.Quit()
             
             return True
         except Exception as e:
+            # Se houve erro e criamos o Word, fechá-lo
+            if fechar_word and 'word' in locals():
+                try:
+                    word.Quit()
+                except:
+                    pass
             raise Exception(f"Erro no Word COM: {str(e)}")
     
     def _converter_com_docx2pdf(self, arquivo_docx, arquivo_pdf):
@@ -376,15 +435,24 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             raise Exception(f"Erro no docx2pdf: {str(e)}")
     
     def _converter_com_aspose(self, arquivo_docx, arquivo_pdf):
-        """Converte usando Aspose"""
+        """Converte usando Aspose com configurações otimizadas"""
         try:
             doc = aw.Document(str(arquivo_docx))
-            doc.save(str(arquivo_pdf))
+            
+            # Configurar opções de salvamento para PDF
+            save_options = aw.saving.PdfSaveOptions()
+            save_options.compliance = aw.saving.PdfCompliance.PDF17  # PDF 1.7
+            save_options.optimize_output = True
+            save_options.preserve_form_fields = True
+            save_options.jpeg_quality = 100  # Qualidade máxima para imagens
+            
+            # Salvar com as opções otimizadas
+            doc.save(str(arquivo_pdf), save_options)
             return True
         except Exception as e:
             raise Exception(f"Erro no Aspose: {str(e)}")
     
-    def _converter_arquivo_com_fallback(self, arquivo_docx, arquivo_pdf):
+    def _converter_arquivo_com_fallback(self, arquivo_docx, arquivo_pdf, word_instance=None):
         """Converte com fallback automático entre métodos"""
         if not self.metodos_disponiveis:
             raise Exception("Nenhum método de conversão disponível!")
@@ -399,10 +467,8 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
                     "aspose": "Aspose.Words"
                 }.get(metodo, metodo)
                 
-                self._adicionar_log(f"    🔄 Tentando: {nome_metodo}...", "info")
-                
                 if metodo == "word_com":
-                    sucesso = self._converter_com_word_com(arquivo_docx, arquivo_pdf)
+                    sucesso = self._converter_com_word_com(arquivo_docx, arquivo_pdf, word_instance)
                 elif metodo == "docx2pdf":
                     sucesso = self._converter_com_docx2pdf(arquivo_docx, arquivo_pdf)
                 elif metodo == "aspose":
@@ -414,11 +480,37 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             except Exception as e:
                 erro_msg = str(e)
                 erros_metodos.append(f"{nome_metodo}: {erro_msg}")
-                self._adicionar_log(f"    ⚠️ Falhou: {erro_msg}", "aviso")
                 continue
         
         erros_completos = "\n      ".join(erros_metodos)
         raise Exception(f"Todos os métodos falharam:\n      {erros_completos}")
+    
+    def _converter_arquivo_worker(self, args):
+        """Worker para conversão paralela"""
+        idx, total, arquivo_docx, pasta_saida, word_instance = args
+        
+        try:
+            arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
+            sucesso, metodo_usado = self._converter_arquivo_com_fallback(
+                arquivo_docx, arquivo_pdf, word_instance
+            )
+            
+            return {
+                'sucesso': True,
+                'arquivo': arquivo_docx.name,
+                'metodo': metodo_usado,
+                'idx': idx,
+                'total': total
+            }
+        except Exception as e:
+            return {
+                'sucesso': False,
+                'arquivo': arquivo_docx.name,
+                'erro': str(e),
+                'idx': idx,
+                'total': total
+            }
+    
     
     def _executar_conversao(self):
         """Executa a conversão"""
@@ -467,6 +559,8 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
     def _thread_conversao_pasta(self, pasta_entrada, pasta_saida):
         """Thread para conversão de pasta"""
         self.conversao_ativa = True
+        word_instance = None
+        usar_word_com = "word_com" in self.metodos_disponiveis
         
         try:
             self._adicionar_log("=" * 80, "info")
@@ -498,35 +592,31 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             total_arquivos = len(arquivos_docx)
             self._adicionar_log(f"📊 Total de arquivos: {total_arquivos}\n", "info")
             
-            # Processar arquivos
-            convertidos = 0
-            erros = 0
-            lista_erros = []
-            metodos_usados = {}
+            inicio_conversao = time.time()
             
-            for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+            # Criar instância única do Word se disponível (otimização)
+            if usar_word_com:
                 try:
-                    progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
-                    self._atualizar_progresso(progresso)
-                    self._adicionar_log(f"\n[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
-                    
-                    arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
-                    
-                    sucesso, metodo_usado = self._converter_arquivo_com_fallback(arquivo_docx, arquivo_pdf)
-                    
-                    if sucesso:
-                        self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
-                        convertidos += 1
-                        
-                        if metodo_usado not in metodos_usados:
-                            metodos_usados[metodo_usado] = 0
-                        metodos_usados[metodo_usado] += 1
-                
+                    self._adicionar_log("⚡ Iniciando Microsoft Word (modo otimizado - sequencial)...\n", "info")
+                    word_instance = win32com.client.Dispatch("Word.Application")
+                    word_instance.Visible = False
                 except Exception as e:
-                    erro_msg = str(e)
-                    self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
-                    erros += 1
-                    lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
+                    self._adicionar_log(f"⚠️ Não foi possível iniciar Word: {e}\n", "aviso")
+                    usar_word_com = False
+            
+            # Se não usar Word COM, usar processamento paralelo
+            if not usar_word_com and total_arquivos > 1:
+                self._adicionar_log("⚡ Modo paralelo ativado (processamento simultâneo)...\n", "info")
+                convertidos, erros, metodos_usados, lista_erros = self._conversao_paralela(
+                    arquivos_docx, pasta_saida, total_arquivos
+                )
+            else:
+                # Modo sequencial (Word COM)
+                convertidos, erros, metodos_usados, lista_erros = self._conversao_sequencial(
+                    arquivos_docx, pasta_saida, total_arquivos, word_instance
+                )
+            
+            tempo_total = time.time() - inicio_conversao
             
             # Resumo
             self._atualizar_progresso("")
@@ -534,6 +624,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             self._adicionar_log("\n📊 RESUMO DA CONVERSÃO\n", "sucesso")
             self._adicionar_log("=" * 80, "info")
             self._adicionar_log(f"\n✅ Convertidos: {convertidos}", "sucesso")
+            self._adicionar_log(f"⏱️ Tempo total: {tempo_total:.1f}s ({tempo_total/max(convertidos, 1):.1f}s por arquivo)", "info")
             
             if metodos_usados:
                 self._adicionar_log(f"\n🔧 Métodos utilizados:", "info")
@@ -545,7 +636,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             
             self._adicionar_log("\n✨ CONVERSÃO CONCLUÍDA!", "sucesso")
             
-            resumo = f"Conversão concluída!\n\nConvertidos: {convertidos}\nErros: {erros}"
+            resumo = f"Conversão concluída em {tempo_total:.1f}s!\n\nConvertidos: {convertidos}\nErros: {erros}"
             messagebox.showinfo("Conversão Concluída", resumo)
             
         except Exception as e:
@@ -553,12 +644,98 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             messagebox.showerror("Erro", f"Erro durante conversão:\n{str(e)}")
         
         finally:
+            # Fechar Word se foi criado
+            if word_instance is not None:
+                try:
+                    self._adicionar_log("\n🔄 Fechando Microsoft Word...", "info")
+                    word_instance.Quit()
+                except Exception as e:
+                    self._adicionar_log(f"⚠️ Erro ao fechar Word: {e}", "aviso")
+            
             self.btn_converter.configure(state="normal", text="🚀 CONVERTER")
             self.conversao_ativa = False
+    
+    def _conversao_sequencial(self, arquivos_docx, pasta_saida, total_arquivos, word_instance):
+        """Conversão sequencial (um por vez)"""
+        convertidos = 0
+        erros = 0
+        lista_erros = []
+        metodos_usados = {}
+        
+        for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+            try:
+                progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
+                self._atualizar_progresso(progresso)
+                self._adicionar_log(f"[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
+                
+                arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
+                
+                sucesso, metodo_usado = self._converter_arquivo_com_fallback(
+                    arquivo_docx, arquivo_pdf, word_instance
+                )
+                
+                if sucesso:
+                    self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
+                    convertidos += 1
+                    
+                    if metodo_usado not in metodos_usados:
+                        metodos_usados[metodo_usado] = 0
+                    metodos_usados[metodo_usado] += 1
+            
+            except Exception as e:
+                erro_msg = str(e)
+                self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
+                erros += 1
+                lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
+        
+        return convertidos, erros, metodos_usados, lista_erros
+    
+    def _conversao_paralela(self, arquivos_docx, pasta_saida, total_arquivos):
+        """Conversão paralela (múltiplos simultaneamente)"""
+        convertidos = 0
+        erros = 0
+        lista_erros = []
+        metodos_usados = {}
+        
+        # Usar até 3 threads paralelas (não mais para não sobrecarregar)
+        max_workers = min(3, total_arquivos)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Preparar tarefas
+            tarefas = []
+            for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+                args = (idx, total_arquivos, arquivo_docx, pasta_saida, None)
+                future = executor.submit(self._converter_arquivo_worker, args)
+                tarefas.append(future)
+            
+            # Processar resultados conforme completam
+            for future in as_completed(tarefas):
+                resultado = future.result()
+                
+                progresso = f"[{resultado['idx']}/{resultado['total']}] {resultado['arquivo']}"
+                self._atualizar_progresso(progresso)
+                self._adicionar_log(f"[{resultado['idx']}/{resultado['total']}] 📄 {resultado['arquivo']}", "info")
+                
+                if resultado['sucesso']:
+                    self._adicionar_log(f"    ✅ Convertido com {resultado['metodo']}", "sucesso")
+                    convertidos += 1
+                    
+                    metodo = resultado['metodo']
+                    if metodo not in metodos_usados:
+                        metodos_usados[metodo] = 0
+                    metodos_usados[metodo] += 1
+                else:
+                    self._adicionar_log(f"    ❌ ERRO: {resultado['erro']}", "erro")
+                    erros += 1
+                    lista_erros.append(f"{resultado['arquivo']}: {resultado['erro']}")
+        
+        return convertidos, erros, metodos_usados, lista_erros
     
     def _thread_conversao_arquivos(self, arquivos_docx, pasta_saida):
         """Thread para conversão de arquivos selecionados"""
         self.conversao_ativa = True
+        word_instance = None
+        usar_word_com = "word_com" in self.metodos_disponiveis
         
         try:
             self._adicionar_log("=" * 80, "info")
@@ -576,38 +753,61 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             total_arquivos = len(arquivos_docx)
             self._adicionar_log(f"📊 Total de arquivos: {total_arquivos}\n", "info")
             
-            # Processar arquivos
-            convertidos = 0
-            erros = 0
-            lista_erros = []
-            metodos_usados = {}
+            inicio_conversao = time.time()
             
-            for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+            # Criar instância única do Word se disponível (otimização)
+            if usar_word_com:
                 try:
-                    if not arquivo_docx.exists():
-                        raise Exception("Arquivo não encontrado")
-                    
-                    progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
-                    self._atualizar_progresso(progresso)
-                    self._adicionar_log(f"\n[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
-                    
-                    arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
-                    
-                    sucesso, metodo_usado = self._converter_arquivo_com_fallback(arquivo_docx, arquivo_pdf)
-                    
-                    if sucesso:
-                        self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
-                        convertidos += 1
-                        
-                        if metodo_usado not in metodos_usados:
-                            metodos_usados[metodo_usado] = 0
-                        metodos_usados[metodo_usado] += 1
-                
+                    self._adicionar_log("⚡ Iniciando Microsoft Word (modo otimizado - sequencial)...\n", "info")
+                    word_instance = win32com.client.Dispatch("Word.Application")
+                    word_instance.Visible = False
                 except Exception as e:
-                    erro_msg = str(e)
-                    self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
-                    erros += 1
-                    lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
+                    self._adicionar_log(f"⚠️ Não foi possível iniciar Word: {e}\n", "aviso")
+                    usar_word_com = False
+            
+            # Se não usar Word COM, usar processamento paralelo
+            if not usar_word_com and total_arquivos > 1:
+                self._adicionar_log("⚡ Modo paralelo ativado (processamento simultâneo)...\n", "info")
+                convertidos, erros, metodos_usados, lista_erros = self._conversao_paralela(
+                    arquivos_docx, pasta_saida, total_arquivos
+                )
+            else:
+                # Modo sequencial (Word COM)
+                convertidos = 0
+                erros = 0
+                lista_erros = []
+                metodos_usados = {}
+                
+                for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+                    try:
+                        if not arquivo_docx.exists():
+                            raise Exception("Arquivo não encontrado")
+                        
+                        progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
+                        self._atualizar_progresso(progresso)
+                        self._adicionar_log(f"[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
+                        
+                        arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
+                        
+                        sucesso, metodo_usado = self._converter_arquivo_com_fallback(
+                            arquivo_docx, arquivo_pdf, word_instance
+                        )
+                        
+                        if sucesso:
+                            self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
+                            convertidos += 1
+                            
+                            if metodo_usado not in metodos_usados:
+                                metodos_usados[metodo_usado] = 0
+                            metodos_usados[metodo_usado] += 1
+                    
+                    except Exception as e:
+                        erro_msg = str(e)
+                        self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
+                        erros += 1
+                        lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
+            
+            tempo_total = time.time() - inicio_conversao
             
             # Resumo
             self._atualizar_progresso("")
@@ -615,6 +815,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             self._adicionar_log("\n📊 RESUMO DA CONVERSÃO\n", "sucesso")
             self._adicionar_log("=" * 80, "info")
             self._adicionar_log(f"\n✅ Convertidos: {convertidos}", "sucesso")
+            self._adicionar_log(f"⏱️ Tempo total: {tempo_total:.1f}s ({tempo_total/max(convertidos, 1):.1f}s por arquivo)", "info")
             
             if metodos_usados:
                 self._adicionar_log(f"\n🔧 Métodos utilizados:", "info")
@@ -626,7 +827,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             
             self._adicionar_log("\n✨ CONVERSÃO CONCLUÍDA!", "sucesso")
             
-            resumo = f"Conversão concluída!\n\nConvertidos: {convertidos}\nErros: {erros}"
+            resumo = f"Conversão concluída em {tempo_total:.1f}s!\n\nConvertidos: {convertidos}\nErros: {erros}"
             messagebox.showinfo("Conversão Concluída", resumo)
             
         except Exception as e:
@@ -634,5 +835,13 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             messagebox.showerror("Erro", f"Erro durante conversão:\n{str(e)}")
         
         finally:
+            # Fechar Word se foi criado
+            if word_instance is not None:
+                try:
+                    self._adicionar_log("\n🔄 Fechando Microsoft Word...", "info")
+                    word_instance.Quit()
+                except Exception as e:
+                    self._adicionar_log(f"⚠️ Erro ao fechar Word: {e}", "aviso")
+            
             self.btn_converter.configure(state="normal", text="🚀 CONVERTER")
             self.conversao_ativa = False

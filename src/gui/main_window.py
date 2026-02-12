@@ -82,6 +82,25 @@ class MainWindow(ctk.CTk):
             )
             return False
     
+    def _configurar_scroll_suave(self, scrollable_frame):
+        """Configura scroll suave com mouse wheel"""
+        def _on_mousewheel(event):
+            # Scroll mais suave e rápido
+            scrollable_frame._parent_canvas.yview_scroll(int(-1 * (event.delta / 60)), "units")
+        
+        # Bind para o frame e seus filhos
+        scrollable_frame._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Unbind quando sair da janela para não conflitar
+        def _unbind_mousewheel(event):
+            scrollable_frame._parent_canvas.unbind_all("<MouseWheel>")
+        
+        def _bind_mousewheel(event):
+            scrollable_frame._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        scrollable_frame._parent_canvas.bind("<Leave>", _unbind_mousewheel)
+        scrollable_frame._parent_canvas.bind("<Enter>", _bind_mousewheel)
+    
     def _criar_interface(self):
         """Cria todos os componentes da interface com navegação por abas"""
         
@@ -152,8 +171,16 @@ class MainWindow(ctk.CTk):
         self.container_abas.pack(fill="both", expand=True, before=self.status_frame)
         
         # ===== CRIAR AS ABAS =====
-        # Aba RPCM (gerador de documentos)
-        self.frame_rpcm = ctk.CTkScrollableFrame(self.container_abas)
+        # Aba RPCM (gerador de documentos) - com scroll otimizado
+        self.frame_rpcm = ctk.CTkScrollableFrame(
+            self.container_abas,
+            fg_color="transparent",
+            scrollbar_button_color=COLORS['primary'],
+            scrollbar_button_hover_color=COLORS['hover']
+        )
+        # Configurar velocidade de scroll
+        self.frame_rpcm._parent_canvas.configure(yscrollincrement=20)
+        self._configurar_scroll_suave(self.frame_rpcm)
         self._criar_conteudo_rpcm()
         
         # Aba Organizador de Lotes
