@@ -5,6 +5,7 @@ Integra: Gerador de RPCM, Organizador de Lotes e Conversor DOCX → PDF
 
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
+import tkinter as tk
 from pathlib import Path
 from typing import Optional
 import sys
@@ -586,7 +587,7 @@ class MainWindow(ctk.CTk):
     def _criar_tabela_lista(self):
         """Cria a tabela de lista de documentos"""
         self.frame_lista = ctk.CTkFrame(self.frame_rpcm)
-        self.frame_lista.pack(fill="both", pady=SPACING['margin'], padx=10)
+        self.frame_lista.pack(fill="x", pady=SPACING['margin'])
         
         label = ctk.CTkLabel(
             self.frame_lista, 
@@ -597,7 +598,7 @@ class MainWindow(ctk.CTk):
         
         # Frame da tabela sem scroll interno
         self.tabela_container = ctk.CTkFrame(self.frame_lista)
-        self.tabela_container.pack(fill="both", expand=True, padx=10, pady=10)
+        self.tabela_container.pack(fill="x", padx=10, pady=10)
         
         # Cabeçalho da tabela
         header = ctk.CTkFrame(self.tabela_container)
@@ -615,9 +616,9 @@ class MainWindow(ctk.CTk):
             )
             label.pack(side="left", padx=2)
         
-        # Container para as linhas com scroll automático
+        # Container para as linhas
         self.linhas_container = ctk.CTkFrame(self.tabela_container)
-        self.linhas_container.pack(fill="both", expand=True)
+        self.linhas_container.pack(fill="x")
     
     def _criar_botoes_acao(self):
         """Cria os botões de ação principais"""

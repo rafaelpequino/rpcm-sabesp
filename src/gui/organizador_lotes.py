@@ -287,6 +287,14 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             text_color="#00FF00"
         )
         self.log_textbox.pack(fill="x", padx=10, pady=(0, 10))
+        # Impedir propagação de scroll do log para a página principal
+        self.log_textbox.bind("<MouseWheel>", self._handle_log_mousewheel)
+    
+    def _handle_log_mousewheel(self, event):
+        """Trata scroll do mouse no log sem propagar para a página"""
+        # Fazer o scroll acontecer no textbox
+        self.log_textbox.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        return "break"  # Impedir propagação do evento
     
     def _selecionar_origem(self):
         """Seleciona pasta de origem (banco)"""
