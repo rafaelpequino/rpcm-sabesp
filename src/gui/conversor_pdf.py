@@ -80,6 +80,52 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
         self._parent_canvas.bind("<Leave>", _unbind_mousewheel)
         self._parent_canvas.bind("<Enter>", _bind_mousewheel)
     
+    def _validar_entrada_manual(self, event=None):
+        """Valida o path de entrada quando o usuário cola ou pressiona Enter"""
+        path_str = self.entry_entrada.get().strip()
+        
+        if not path_str:
+            return
+        
+        if self.modo_selecao == "pasta":
+            path_obj = Path(path_str)
+            if path_obj.exists() and path_obj.is_dir():
+                self.pasta_entrada = path_obj
+                self._adicionar_log(f"✅ Pasta validada: {path_obj.name}", "info")
+            else:
+                self.pasta_entrada = None
+                self.entry_entrada.delete(0, 'end')
+                self._adicionar_log(f"❌ Caminho de pasta inválido", "erro")
+        
+        # Se foi pressionado Enter, fazer o foco sair do campo
+        if event and event.keysym == "Return":
+            self.focus()
+    
+    def _validar_saida_manual(self, event=None):
+        """Valida o path de saída quando o usuário cola ou pressiona Enter"""
+        path_str = self.entry_saida.get().strip()
+        
+        if not path_str:
+            return
+        
+        path_obj = Path(path_str)
+        if path_obj.exists() and path_obj.is_dir():
+            self.pasta_saida = path_obj
+            self._adicionar_log(f"✅ Pasta de saída validada: {path_obj.name}", "info")
+        else:
+            try:
+                path_obj.mkdir(parents=True, exist_ok=True)
+                self.pasta_saida = path_obj
+                self._adicionar_log(f"✅ Pasta de saída criada: {path_obj.name}", "info")
+            except Exception:
+                self.pasta_saida = None
+                self.entry_saida.delete(0, 'end')
+                self._adicionar_log(f"❌ Caminho de pasta de saída inválido", "erro")
+        
+        # Se foi pressionado Enter, fazer o foco sair do campo
+        if event and event.keysym == "Return":
+            self.focus()
+    
     def _detectar_metodos(self):
         """Detecta métodos de conversão disponíveis"""
         metodos = []
@@ -168,6 +214,9 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             font=FONTS['input']
         )
         self.entry_entrada.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Bind para validação ao perder foco e ao pressionar Enter
+        self.entry_entrada.bind("<FocusOut>", self._validar_entrada_manual)
+        self.entry_entrada.bind("<Return>", self._validar_entrada_manual)
         
         self.btn_entrada = ctk.CTkButton(
             container_entrada,
@@ -201,6 +250,9 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             font=FONTS['input']
         )
         self.entry_saida.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Bind para validação ao perder foco e ao pressionar Enter
+        self.entry_saida.bind("<FocusOut>", self._validar_saida_manual)
+        self.entry_saida.bind("<Return>", self._validar_saida_manual)
         
         btn_saida = ctk.CTkButton(
             container_saida,

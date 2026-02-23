@@ -24,7 +24,7 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
         )
         
         # Configurar scroll suave
-        self._parent_canvas.configure(yscrollincrement=20)
+        self._parent_canvas.configure(yscrollincrement=30)
         self._configurar_scroll_suave()
         
         # Variáveis
@@ -36,8 +36,8 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
     def _configurar_scroll_suave(self):
         """Configura scroll suave com mouse wheel"""
         def _on_mousewheel(event):
-            # Scroll mais suave e rápido
-            self._parent_canvas.yview_scroll(int(-1 * (event.delta / 60)), "units")
+            # Scroll mais suave - reduzir a divisão para menos linhas por scroll
+            self._parent_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         
         # Bind para o canvas
         self._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
@@ -51,6 +51,51 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
         
         self._parent_canvas.bind("<Leave>", _unbind_mousewheel)
         self._parent_canvas.bind("<Enter>", _bind_mousewheel)
+    
+    def _validar_origem_manual(self, event=None):
+        """Valida o path de origem quando o usuário cola ou pressiona Enter"""
+        path_str = self.entry_origem.get().strip()
+        
+        if not path_str:
+            return
+        
+        path_obj = Path(path_str)
+        if path_obj.exists() and path_obj.is_dir():
+            self.pasta_origem = path_obj
+            self._adicionar_log(f"✅ Pasta de origem validada: {path_obj.name}", "info")
+        else:
+            self.pasta_origem = None
+            self.entry_origem.delete(0, 'end')
+            self._adicionar_log(f"❌ Caminho de pasta de origem inválido", "erro")
+        
+        # Se foi pressionado Enter, fazer o foco sair do campo
+        if event and event.keysym == "Return":
+            self.focus()
+    
+    def _validar_destino_manual(self, event=None):
+        """Valida o path de destino quando o usuário cola ou pressiona Enter"""
+        path_str = self.entry_destino.get().strip()
+        
+        if not path_str:
+            return
+        
+        path_obj = Path(path_str)
+        if path_obj.exists() and path_obj.is_dir():
+            self.pasta_destino = path_obj
+            self._adicionar_log(f"✅ Pasta de destino validada: {path_obj.name}", "info")
+        else:
+            try:
+                path_obj.mkdir(parents=True, exist_ok=True)
+                self.pasta_destino = path_obj
+                self._adicionar_log(f"✅ Pasta de destino criada: {path_obj.name}", "info")
+            except Exception:
+                self.pasta_destino = None
+                self.entry_destino.delete(0, 'end')
+                self._adicionar_log(f"❌ Caminho de pasta de destino inválido", "erro")
+        
+        # Se foi pressionado Enter, fazer o foco sair do campo
+        if event and event.keysym == "Return":
+            self.focus()
     
     def _criar_interface(self):
         """Cria a interface do organizador"""
@@ -92,6 +137,9 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             font=FONTS['input']
         )
         self.entry_origem.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Bind para validação ao perder foco e ao pressionar Enter
+        self.entry_origem.bind("<FocusOut>", self._validar_origem_manual)
+        self.entry_origem.bind("<Return>", self._validar_origem_manual)
         
         btn_origem = ctk.CTkButton(
             container_origem,
@@ -125,6 +173,9 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             font=FONTS['input']
         )
         self.entry_destino.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Bind para validação ao perder foco e ao pressionar Enter
+        self.entry_destino.bind("<FocusOut>", self._validar_destino_manual)
+        self.entry_destino.bind("<Return>", self._validar_destino_manual)
         
         btn_destino = ctk.CTkButton(
             container_destino,

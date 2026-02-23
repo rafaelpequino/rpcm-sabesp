@@ -43,6 +43,8 @@ class MainWindow(ctk.CTk):
         self.lista_documentos = []  # Lista de documentos
         self.template_path = None  # Caminho do template selecionado
         self.aba_atual = "rpcm"  # Aba ativa (rpcm, lotes, conversor)
+        self.pasta_destino_rpcm = None  # Caminho da pasta para salvar RPCMs
+        self.pasta_templates = None  # Caminho padrão da pasta de templates
         
         # Inicializar geradores
         self.generator = None
@@ -85,8 +87,8 @@ class MainWindow(ctk.CTk):
     def _configurar_scroll_suave(self, scrollable_frame):
         """Configura scroll suave com mouse wheel"""
         def _on_mousewheel(event):
-            # Scroll mais suave e rápido
-            scrollable_frame._parent_canvas.yview_scroll(int(-1 * (event.delta / 60)), "units")
+            # Scroll mais suave - reduzir a divisão para menos linhas por scroll
+            scrollable_frame._parent_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         
         # Bind para o frame e seus filhos
         scrollable_frame._parent_canvas.bind_all("<MouseWheel>", _on_mousewheel)
@@ -178,8 +180,8 @@ class MainWindow(ctk.CTk):
             scrollbar_button_color=COLORS['primary'],
             scrollbar_button_hover_color=COLORS['hover']
         )
-        # Configurar velocidade de scroll
-        self.frame_rpcm._parent_canvas.configure(yscrollincrement=20)
+        # Configurar velocidade de scroll mais fluida
+        self.frame_rpcm._parent_canvas.configure(yscrollincrement=30)
         self._configurar_scroll_suave(self.frame_rpcm)
         self._criar_conteudo_rpcm()
         
@@ -241,19 +243,25 @@ class MainWindow(ctk.CTk):
     def _criar_conteudo_rpcm(self):
         """Cria o conteúdo da aba de Gerador de RPCM"""
         
-        # 1. Seleção de Template
+        # 1. Seleção de Pasta de Templates
+        self._criar_secao_pasta_templates()
+        
+        # 2. Seleção de Template
         self._criar_secao_template()
         
-        # 2. Campos de Entrada
+        # 3. Seleção de Pasta de Destino
+        self._criar_secao_destino()
+        
+        # 4. Campos de Entrada
         self._criar_campos_entrada()
         
-        # 3. Botão Adicionar
+        # 5. Botão Adicionar
         self._criar_botao_adicionar()
         
-        # 4. Tabela de Lista
+        # 6. Tabela de Lista
         self._criar_tabela_lista()
         
-        # 5. Botões de Ação
+        # 7. Botões de Ação
         self._criar_botoes_acao()
     
     def _criar_secao_template(self):
@@ -306,6 +314,174 @@ class MainWindow(ctk.CTk):
         else:
             # Template padrão
             return "✓ Template padrão: template_rpcm.docx"
+    
+    def _criar_secao_destino(self):
+        """Cria a seção de seleção de pasta de destino"""
+        frame = ctk.CTkFrame(self.frame_rpcm)
+        frame.pack(fill="x", pady=(0, SPACING['margin']))
+        
+        label = ctk.CTkLabel(
+            frame, 
+            text="📁 PASTA DE DESTINO", 
+            font=FONTS['subtitle']
+        )
+        label.pack(pady=SPACING['small_margin'], anchor="w", padx=10)
+        
+        # Container para o input e botão
+        container = ctk.CTkFrame(frame)
+        container.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Entry para mostrar a pasta selecionada
+        self.entry_destino_rpcm = ctk.CTkEntry(
+            container,
+            placeholder_text="Selecione uma pasta para salvar os arquivos...",
+            font=FONTS['small'],
+            height=35
+        )
+        self.entry_destino_rpcm.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Bind para validação ao perder foco e ao pressionar Enter
+        self.entry_destino_rpcm.bind("<FocusOut>", self._validar_pasta_destino)
+        self.entry_destino_rpcm.bind("<Return>", self._validar_pasta_destino)
+        
+        # Botão Selecionar Pasta
+        btn_selecionar_destino = ctk.CTkButton(
+            container,
+            text="📂 Selecionar Pasta",
+            command=self._on_selecionar_destino_rpcm,
+            font=FONTS['button'],
+            height=35,
+            width=180,
+            fg_color=COLORS['info'],
+            hover_color="#138496"
+        )
+        btn_selecionar_destino.pack(side="left")
+    
+    def _on_selecionar_destino_rpcm(self):
+        """Handler para selecionar pasta de destino dos RPCMs"""
+        pasta = filedialog.askdirectory(
+            title="Selecionar pasta para salvar os arquivos RPCM"
+        )
+        
+        if pasta:
+            self.pasta_destino_rpcm = pasta
+            self.entry_destino_rpcm.delete(0, 'end')
+            self.entry_destino_rpcm.insert(0, pasta)
+            self.update_status(f"✓ Pasta de destino selecionada: {Path(pasta).name}", "success")
+    
+    def _validar_pasta_destino(self, event=None):
+        """Valida o path da pasta de destino quando o usuário cola ou pressiona Enter"""
+        path_str = self.entry_destino_rpcm.get().strip()
+        
+        if not path_str:
+            # Campo vazio é ok
+            return
+        
+        path_obj = Path(path_str)
+        
+        if path_obj.exists() and path_obj.is_dir():
+            # Path válido
+            self.pasta_destino_rpcm = str(path_obj)
+            self.update_status(f"✓ Pasta de destino válida: {path_obj.name}", "success")
+        else:
+            # Path inválido - tentar criar a pasta se não existir
+            try:
+                path_obj.mkdir(parents=True, exist_ok=True)
+                self.pasta_destino_rpcm = str(path_obj)
+                self.update_status(f"✓ Pasta de destino criada e validada: {path_obj.name}", "success")
+            except Exception as e:
+                # Path inválido e não pode ser criado
+                self.pasta_destino_rpcm = None
+                self.entry_destino_rpcm.delete(0, 'end')
+                self.update_status("✗ Caminho de pasta de destino inválido", "error")
+                messagebox.showerror(
+                    "Caminho Inválido",
+                    f"O caminho digitado não é válido ou não pode ser criado:\n\n{path_str}\n\nErro: {str(e)}"
+                )
+        
+        # Se foi pressionado Enter, fazer o foco sair do campo
+        if event and event.keysym == "Return":
+            self.focus()
+    
+    def _criar_secao_pasta_templates(self):
+        """Cria a seção de seleção de pasta de templates"""
+        frame = ctk.CTkFrame(self.frame_rpcm)
+        frame.pack(fill="x", pady=(0, SPACING['margin']))
+        
+        label = ctk.CTkLabel(
+            frame, 
+            text="🗂️ PASTA DE TEMPLATES", 
+            font=FONTS['subtitle']
+        )
+        label.pack(pady=SPACING['small_margin'], anchor="w", padx=10)
+        
+        # Container para o input e botão
+        container = ctk.CTkFrame(frame)
+        container.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Entry para mostrar a pasta selecionada
+        self.entry_pasta_templates = ctk.CTkEntry(
+            container,
+            placeholder_text="Selecione a pasta padrão de templates...",
+            font=FONTS['small'],
+            height=35
+        )
+        self.entry_pasta_templates.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Bind para validação ao perder foco e ao pressionar Enter
+        self.entry_pasta_templates.bind("<FocusOut>", self._validar_pasta_templates)
+        self.entry_pasta_templates.bind("<Return>", self._validar_pasta_templates)
+        
+        # Botão Selecionar Pasta de Templates
+        btn_selecionar_templates = ctk.CTkButton(
+            container,
+            text="📂 Selecionar Pasta",
+            command=self._on_selecionar_pasta_templates,
+            font=FONTS['button'],
+            height=35,
+            width=180,
+            fg_color=COLORS['info'],
+            hover_color="#138496"
+        )
+        btn_selecionar_templates.pack(side="left")
+    
+    def _on_selecionar_pasta_templates(self):
+        """Handler para selecionar pasta padrão de templates"""
+        pasta = filedialog.askdirectory(
+            title="Selecionar pasta padrão de templates"
+        )
+        
+        if pasta:
+            self.pasta_templates = pasta
+            self.entry_pasta_templates.delete(0, 'end')
+            self.entry_pasta_templates.insert(0, pasta)
+            self.update_status(f"✓ Pasta de templates selecionada: {Path(pasta).name}", "success")
+    
+    def _validar_pasta_templates(self, event=None):
+        """Valida o path da pasta de templates quando o usuário cola ou pressiona Enter"""
+        path_str = self.entry_pasta_templates.get().strip()
+        
+        if not path_str:
+            # Campo vazio é ok
+            return
+        
+        path_obj = Path(path_str)
+        
+        if path_obj.exists() and path_obj.is_dir():
+            # Path válido
+            self.pasta_templates = str(path_obj)
+            self.update_status(f"✓ Pasta de templates válida: {path_obj.name}", "success")
+        else:
+            # Path inválido
+            self.pasta_templates = None
+            self.entry_pasta_templates.delete(0, 'end')
+            self.update_status("✗ Caminho de pasta de templates inválido", "error")
+            messagebox.showerror(
+                "Caminho Inválido",
+                f"O caminho digitado não existe ou não é uma pasta válida:\n\n{path_str}"
+            )
+        
+        # Se foi pressionado Enter, fazer o foco sair do campo
+        if event and event.keysym == "Return":
+            self.focus()
     
     def _criar_campos_entrada(self):
         """Cria os campos de entrada de dados"""
@@ -410,7 +586,7 @@ class MainWindow(ctk.CTk):
     def _criar_tabela_lista(self):
         """Cria a tabela de lista de documentos"""
         self.frame_lista = ctk.CTkFrame(self.frame_rpcm)
-        self.frame_lista.pack(fill="x", pady=SPACING['margin'])
+        self.frame_lista.pack(fill="both", pady=SPACING['margin'], padx=10)
         
         label = ctk.CTkLabel(
             self.frame_lista, 
@@ -421,7 +597,7 @@ class MainWindow(ctk.CTk):
         
         # Frame da tabela sem scroll interno
         self.tabela_container = ctk.CTkFrame(self.frame_lista)
-        self.tabela_container.pack(fill="x", padx=10, pady=10)
+        self.tabela_container.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Cabeçalho da tabela
         header = ctk.CTkFrame(self.tabela_container)
@@ -439,18 +615,22 @@ class MainWindow(ctk.CTk):
             )
             label.pack(side="left", padx=2)
         
-        # Container para as linhas
+        # Container para as linhas com scroll automático
         self.linhas_container = ctk.CTkFrame(self.tabela_container)
-        self.linhas_container.pack(fill="x")
+        self.linhas_container.pack(fill="both", expand=True)
     
     def _criar_botoes_acao(self):
         """Cria os botões de ação principais"""
         self.frame_botoes = ctk.CTkFrame(self.frame_rpcm)
-        self.frame_botoes.pack(fill="x", pady=SPACING['margin'])
+        self.frame_botoes.pack(fill="x", pady=SPACING['margin'], padx=10)
+        
+        # Primeira linha de botões
+        botoes_line1 = ctk.CTkFrame(self.frame_botoes)
+        botoes_line1.pack(fill="x", pady=(0, 10))
         
         # Botão Gerar Documentos
         self.btn_gerar = ctk.CTkButton(
-            self.frame_botoes,
+            botoes_line1,
             text="📄 Gerar Documentos",
             command=self._gerar_documentos_lote,
             font=FONTS['button'],
@@ -458,15 +638,31 @@ class MainWindow(ctk.CTk):
             fg_color=COLORS['success'],
             hover_color="#218838"
         )
-        self.btn_gerar.pack(side="left", padx=5, pady=10, expand=True, fill="x")
+        self.btn_gerar.pack(side="left", padx=5, expand=True, fill="x")
         
         # Desabilitar se template não existe
         if not self.template_valido:
             self.btn_gerar.configure(state="disabled")
         
-        # Botão Limpar
+        # Segunda linha de botões
+        botoes_line2 = ctk.CTkFrame(self.frame_botoes)
+        botoes_line2.pack(fill="x")
+        
+        # Botão Limpar Lista
+        self.btn_limpar_lista = ctk.CTkButton(
+            botoes_line2,
+            text="🧹 Limpar Lista",
+            command=self._on_limpar_lista,
+            font=FONTS['button'],
+            height=40,
+            fg_color="#6c757d",
+            hover_color="#5a6268"
+        )
+        self.btn_limpar_lista.pack(side="left", padx=5, expand=True, fill="x")
+        
+        # Botão Limpar Tudo
         self.btn_limpar = ctk.CTkButton(
-            self.frame_botoes,
+            botoes_line2,
             text="🗑️ Limpar Tudo",
             command=self._on_limpar_tudo,
             font=FONTS['button'],
@@ -474,7 +670,7 @@ class MainWindow(ctk.CTk):
             fg_color=COLORS['warning'],
             hover_color="#e0a800"
         )
-        self.btn_limpar.pack(side="left", padx=5, pady=10, expand=True, fill="x")
+        self.btn_limpar.pack(side="left", padx=5, expand=True, fill="x")
     
     def _criar_barra_status(self):
         """Cria a barra de status no rodapé"""
@@ -646,6 +842,14 @@ class MainWindow(ctk.CTk):
     
     def _on_selecionar_template(self):
         """Handler para selecionar arquivo de template"""
+        # Determinar diretório inicial
+        if self.pasta_templates and Path(self.pasta_templates).exists():
+            initialdir = self.pasta_templates
+        elif (Path.cwd() / "templates").exists():
+            initialdir = Path.cwd() / "templates"
+        else:
+            initialdir = Path.cwd()
+        
         # Abrir diálogo para selecionar arquivo
         arquivo = filedialog.askopenfilename(
             title="Selecionar Template DOCX",
@@ -653,7 +857,7 @@ class MainWindow(ctk.CTk):
                 ("Word Documents", "*.docx"),
                 ("Todos os arquivos", "*.*")
             ],
-            initialdir=Path.cwd() / "templates" if (Path.cwd() / "templates").exists() else Path.cwd()
+            initialdir=initialdir
         )
         
         if not arquivo:
@@ -792,13 +996,24 @@ class MainWindow(ctk.CTk):
             )
             return
         
-        # Selecionar pasta de destino
-        pasta = filedialog.askdirectory(
-            title="Selecionar pasta para salvar documentos"
-        )
+        # Verificar se pasta de destino foi selecionada
+        if not self.pasta_destino_rpcm:
+            messagebox.showwarning(
+                "Pasta não selecionada",
+                "Por favor, selecione uma pasta de destino para salvar os arquivos."
+            )
+            return
         
-        if not pasta:
-            return  # Usuário cancelou
+        # Verificar se a pasta existe
+        pasta_path = Path(self.pasta_destino_rpcm)
+        if not pasta_path.exists():
+            messagebox.showerror(
+                "Pasta não encontrada",
+                f"A pasta selecionada não existe:\n{self.pasta_destino_rpcm}"
+            )
+            return
+        
+        pasta = self.pasta_destino_rpcm
         
         # Gerar documentos REALMENTE
         total = len(self.lista_documentos)
@@ -865,7 +1080,21 @@ class MainWindow(ctk.CTk):
             for widget in self.linhas_container.winfo_children():
                 widget.destroy()
             
+            # Limpar pasta de destino
+            self.pasta_destino_rpcm = None
+            self.entry_destino_rpcm.delete(0, 'end')
+            
             self.update_status("Formulário limpo", "info")
+    
+    def _on_limpar_lista(self):
+        """Handler para limpar apenas a lista de documentos"""
+        if messagebox.askyesno("Confirmar", "Deseja limpar apenas a lista de documentos?"):
+            # Limpar lista
+            self.lista_documentos.clear()
+            for widget in self.linhas_container.winfo_children():
+                widget.destroy()
+            
+            self.update_status("Lista limpa (campos mantidos)", "info")
     
     def _on_importar_excel(self):
         """Handler para importar Excel"""
