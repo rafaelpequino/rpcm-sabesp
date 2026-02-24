@@ -10,16 +10,12 @@ from pathlib import Path
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import os
+import ctypes
 
 from src.gui.styles import COLORS, FONTS, SPACING
 
 # Importar bibliotecas de conversão
-try:
-    from docx2pdf import convert as docx2pdf_convert
-    DOCX2PDF_DISPONIVEL = True
-except ImportError:
-    DOCX2PDF_DISPONIVEL = False
-
 try:
     from docx import Document
     import win32com.client
@@ -32,6 +28,26 @@ try:
     ASPOSE_WORDS_DISPONIVEL = True
 except ImportError:
     ASPOSE_WORDS_DISPONIVEL = False
+
+try:
+    import subprocess
+    # Verificar se LibreOffice está realmente disponível no sistema
+    libreoffice_path = None
+    possible_paths = [
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        r"C:\Users\{}\AppData\Local\Programs\LibreOffice\program\soffice.exe".format(
+            __import__('os').environ.get('USERNAME', '')
+        )
+    ]
+    for path in possible_paths:
+        if __import__('os').path.exists(path):
+            libreoffice_path = path
+            break
+    
+    LIBREOFFICE_DISPONIVEL = libreoffice_path is not None
+except ImportError:
+    LIBREOFFICE_DISPONIVEL = False
 
 
 class ConversorPdfFrame(ctk.CTkScrollableFrame):
@@ -81,7 +97,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
         self._parent_canvas.bind("<Enter>", _bind_mousewheel)
     
     def _validar_entrada_manual(self, event=None):
-        """Valida o path de entrada quando o usuário cola ou pressiona Enter"""
+        """Valida o path de entrada quando o usuário cola, aperta Enter ou sai do campo"""
         path_str = self.entry_entrada.get().strip()
         
         if not path_str:
@@ -102,7 +118,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             self.focus()
     
     def _validar_saida_manual(self, event=None):
-        """Valida o path de saída quando o usuário cola ou pressiona Enter"""
+        """Valida o path de saída quando o usuário cola, aperta Enter ou sai do campo"""
         path_str = self.entry_saida.get().strip()
         
         if not path_str:
@@ -132,9 +148,6 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
         
         if WORD_COM_DISPONIVEL:
             metodos.append("word_com")
-        
-        if DOCX2PDF_DISPONIVEL:
-            metodos.append("docx2pdf")
         
         if ASPOSE_WORDS_DISPONIVEL:
             metodos.append("aspose")
@@ -442,117 +455,341 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
         self.label_progresso.configure(text=texto)
         self.update()
     
-    def _converter_com_word_com(self, arquivo_docx, arquivo_pdf, word_instance=None):
-        """Converte usando Word COM com configurações otimizadas"""
+    def _criar_word_instance(self):
+        """Cria uma instância NOVA do Word forçando novo processo (DispatchEx)"""
         try:
-            # Se não foi passada uma instância, criar uma nova
-            fechar_word = False
-            if word_instance is None:
-                word = win32com.client.Dispatch("Word.Application")
-                word.Visible = False
-                fechar_word = True
-            else:
-                word = word_instance
-            
-            # Abrir documento
-            doc = word.Documents.Open(str(arquivo_docx))
-            
-            # Usar ExportAsFixedFormat com configurações otimizadas
-            # Isso preserva melhor a formatação do que SaveAs
-            doc.ExportAsFixedFormat(
-                OutputFileName=str(arquivo_pdf),
-                ExportFormat=17,  # wdExportFormatPDF = 17
-                OpenAfterExport=False,
-                OptimizeFor=0,  # wdExportOptimizeForPrint = 0 (melhor qualidade)
-                CreateBookmarks=0,  # wdExportCreateNoBookmarks = 0
-                DocStructureTags=True,  # Preservar estrutura
-                BitmapMissingFonts=True,  # Converter fontes ausentes em bitmap
-                UseISO19005_1=False  # Não usar PDF/A
-            )
-            
-            doc.Close(SaveChanges=False)
-            
-            # Só fechar o Word se foi criado nesta chamada
-            if fechar_word:
-                word.Quit()
-            
+            # DispatchEx FORÇA criação de novo processo separado
+            # Não reutiliza instâncias existentes que podem estar em estado inválido
+            word = win32com.client.DispatchEx("Word.Application")
+        except Exception:
+            # Fallback: Dispatch normal
+            word = win32com.client.Dispatch("Word.Application")
+
+        # Configurar a instância - cada propriedade em try-except separado
+        try:
+            word.Visible = False
+        except Exception:
+            pass
+        try:
+            word.DisplayAlerts = 0  # wdAlertsNone
+        except Exception:
+            pass
+        try:
+            word.ScreenUpdating = False
+        except Exception:
+            pass
+
+        # CRÍTICO para fidelidade de bordas/linhas:
+        # O Word computa o layout (espessura de bordas, espaçamentos) com base nos
+        # DPI da impressora ativa. Se a impressora padrão for uma HP/etc. a 1200 DPI,
+        # as bordas ficam desproporcionais no PDF. Definir "Microsoft Print to PDF"
+        # garante que o layout use as métricas corretas para saída em PDF.
+        try:
+            word.ActivePrinter = "Microsoft Print to PDF"
+        except Exception:
+            pass
+
+        return word
+
+    def _converter_com_word_com(self, arquivo_docx, arquivo_pdf, word_instance=None):
+        """Converte usando Word COM - reutiliza instância se fornecida (muito mais rápido)"""
+        doc = None
+        word = word_instance
+        criou_instancia = False
+
+        try:
+            # Criar instância apenas se não foi fornecida (modo avulso)
+            if word is None:
+                word = self._criar_word_instance()
+                criou_instancia = True
+
+            arquivo_docx_path = Path(arquivo_docx).absolute()
+            arquivo_pdf_path = Path(arquivo_pdf).absolute()
+            arquivo_docx_abs = str(arquivo_docx_path)
+            arquivo_pdf_abs = str(arquivo_pdf_path)
+
+            if not arquivo_docx_path.exists():
+                raise Exception(f"Arquivo não encontrado: {arquivo_docx_abs}")
+
+            # Remover PDF anterior se existir
+            if arquivo_pdf_path.exists():
+                try:
+                    arquivo_pdf_path.unlink()
+                except Exception:
+                    pass
+
+            # Abrir em modo EDIÇÃO (ReadOnly=False) — garante layout completo
+            try:
+                doc = word.Documents.Open(
+                    arquivo_docx_abs,  # FileName
+                    False,             # ConfirmConversions
+                    False,             # ReadOnly = False
+                    False              # AddToRecentFiles
+                )
+            except Exception as e:
+                raise Exception(f"Erro ao abrir documento: {str(e)}")
+
+            # Forçar recálculo completo do layout com as métricas da impressora PDF
+            # Necessário para garantir que as bordas usem os DPI corretos
+            try:
+                doc.Repaginate()
+            except Exception:
+                pass
+
+            # Exportar para PDF com máxima fidelidade
+            # ExportAsFixedFormat com parâmetros explícitos dá mais controle que SaveAs2
+            try:
+                doc.ExportAsFixedFormat(
+                    OutputFileName=arquivo_pdf_abs,
+                    ExportFormat=17,          # wdExportFormatPDF
+                    OpenAfterExport=False,
+                    OptimizeFor=0,            # wdExportOptimizeForPrint
+                    Item=0,                   # wdExportDocumentContent
+                    IncludeDocProps=False,
+                    KeepIRM=True,
+                    CreateBookmarks=0,        # wdExportCreateNoBookmarks
+                    DocStructureTags=False,
+                    BitmapMissingFonts=False, # Manter vetorial — evita rasterização que duplica bordas
+                    UseISO19005_1=False       # Não PDF/A — mais fidelidade visual
+                )
+            except Exception as e:
+                raise Exception(f"Erro ao exportar PDF: {str(e)}")
+
+            # Validar resultado
+            if not arquivo_pdf_path.exists() or arquivo_pdf_path.stat().st_size == 0:
+                raise Exception("PDF não foi criado ou está vazio")
+
             return True
+
         except Exception as e:
-            # Se houve erro e criamos o Word, fechá-lo
-            if fechar_word and 'word' in locals():
+            raise Exception(f"Erro no Word COM: {str(e)}")
+
+        finally:
+            # Sempre fechar o documento
+            if doc is not None:
+                try:
+                    doc.Close(SaveChanges=False)
+                except Exception:
+                    pass
+            # Fechar Word apenas se criamos a instância aqui (modo avulso)
+            if criou_instancia and word is not None:
                 try:
                     word.Quit()
-                except:
+                except Exception:
                     pass
-            raise Exception(f"Erro no Word COM: {str(e)}")
     
-    def _converter_com_docx2pdf(self, arquivo_docx, arquivo_pdf):
-        """Converte usando docx2pdf"""
-        try:
-            docx2pdf_convert(str(arquivo_docx), str(arquivo_pdf))
-            return True
-        except Exception as e:
-            raise Exception(f"Erro no docx2pdf: {str(e)}")
-    
-    def _converter_com_aspose(self, arquivo_docx, arquivo_pdf):
-        """Converte usando Aspose com configurações otimizadas"""
+    def _converter_com_aspose_fallback(self, arquivo_docx, arquivo_pdf):
+        """Fallback para Aspose quando Word COM falha"""
         try:
             doc = aw.Document(str(arquivo_docx))
             
-            # Configurar opções de salvamento para PDF
+            # Configurar opções de salvamento para máxima qualidade
             save_options = aw.saving.PdfSaveOptions()
-            save_options.compliance = aw.saving.PdfCompliance.PDF17  # PDF 1.7
+            save_options.compliance = aw.saving.PdfCompliance.PDF17
             save_options.optimize_output = True
             save_options.preserve_form_fields = True
-            save_options.jpeg_quality = 100  # Qualidade máxima para imagens
+            save_options.jpeg_quality = 100
             
-            # Salvar com as opções otimizadas
             doc.save(str(arquivo_pdf), save_options)
             return True
         except Exception as e:
+            raise Exception(f"Erro no Aspose Fallback: {str(e)}")
+    
+    def _converter_com_aspose(self, arquivo_docx, arquivo_pdf):
+        """Converte usando Aspose com MÁXIMA FIDELIDADE ao documento original"""
+        try:
+            doc = aw.Document(str(arquivo_docx))
+            
+            # Configurações para MÁXIMA FIDELIDADE
+            save_options = aw.saving.PdfSaveOptions()
+            
+            # Renderização nativa (não convertida)
+            save_options.dml_rendering_mode = aw.saving.DmlRenderingMode.NATIVE
+            
+            # Preservar estrutura e layout exato
+            save_options.preserve_form_fields = True
+            save_options.export_document_structure = True
+            
+            # Qualidade máxima de imagem
+            save_options.jpeg_quality = 100
+            save_options.color_mode = aw.saving.ColorMode.RGB
+            
+            # PDF17 padrão (não PDF/A que comprime mais)
+            save_options.compliance = aw.saving.PdfCompliance.PDF17
+            
+            # Usar fontes nativas para precisão máxima
+            save_options.use_core_fonts = False
+            save_options.embed_full_fonts = True
+            
+            # Configurações avançadas para máxima fidelidade
+            save_options.export_page_set = aw.saving.ExportPageSet("0")  # Todas as páginas
+            
+            # Desabilitar otimizações que podem afetar fidelidade
+            save_options.optimize_output = False
+            
+            # Salvar com máxima fidelidade
+            doc.save(str(arquivo_pdf), save_options)
+            return True
+            
+        except Exception as e:
             raise Exception(f"Erro no Aspose: {str(e)}")
     
-    def _converter_arquivo_com_fallback(self, arquivo_docx, arquivo_pdf, word_instance=None):
-        """Converte com fallback automático entre métodos"""
-        if not self.metodos_disponiveis:
-            raise Exception("Nenhum método de conversão disponível!")
-        
+    def _converter_com_libreoffice(self, arquivo_docx, arquivo_pdf):
+        """Converte usando LibreOffice via CLI - MELHOR fidelidade para documentos complexos"""
+        try:
+            # Tentar encontrar LibreOffice
+            libreoffice_path = None
+            
+            # Caminhos comuns do LibreOffice no Windows
+            possible_paths = [
+                r"C:\Program Files\LibreOffice\program\soffice.exe",
+                r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+                r"C:\Users\{}\AppData\Local\Programs\LibreOffice\program\soffice.exe".format(
+                    os.environ.get('USERNAME', '')
+                )
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    libreoffice_path = path
+                    break
+            
+            if not libreoffice_path:
+                raise Exception("LibreOffice não encontrado no sistema")
+            
+            # Caminho absoluto
+            arquivo_docx_abs = str(Path(arquivo_docx).absolute())
+            pasta_saida_abs = str(Path(arquivo_pdf).parent.absolute())
+            
+            # Comando LibreOffice: melhor fidelidade com opções específicas
+            comando = [
+                libreoffice_path,
+                "--headless",
+                "--convert-to", "pdf:writer_pdf_Export:{'FilterOptions':''}",
+                "--outdir", pasta_saida_abs,
+                arquivo_docx_abs
+            ]
+            
+            # Executar conversão
+            resultado = subprocess.run(
+                comando,
+                capture_output=True,
+                timeout=60,
+                text=True
+            )
+            
+            if resultado.returncode != 0:
+                raise Exception(f"LibreOffice falhou: {resultado.stderr}")
+            
+            # Validar se PDF foi criado
+            if not Path(arquivo_pdf).exists():
+                raise Exception("PDF não foi criado pelo LibreOffice")
+            
+            return True
+            
+        except Exception as e:
+            raise Exception(f"Erro no LibreOffice: {str(e)}")
+    
+    def _validar_pdf_fidelidade(self, arquivo_pdf):
+        """Valida se o PDF foi criado com fidelidade mínima"""
+        try:
+            if not Path(arquivo_pdf).exists():
+                return False, "PDF não existe"
+            
+            tamanho = Path(arquivo_pdf).stat().st_size
+            if tamanho == 0:
+                return False, "PDF vazio"
+            
+            if tamanho < 1000:  # Menos de 1KB é suspeito
+                return False, "PDF muito pequeno (possível corrupção)"
+            
+            return True, "OK"
+        except Exception as e:
+            return False, str(e)
+    
+
+    def _converter_arquivo_com_fallback(self, arquivo_docx, arquivo_pdf, word_instance=None, usar_libreoffice=True):
+        """Converte com fallback automático entre métodos - ordem: LibreOffice > Aspose > Word COM"""
         erros_metodos = []
         
-        for metodo in self.metodos_disponiveis:
+        # PRIMEIRA TENTATIVA: LibreOffice (MELHOR fidelidade para bordas e linhas)
+        # NOTA: Apenas usar LibreOffice se explicitamente autorizado (não em modo paralelo)
+        if usar_libreoffice and LIBREOFFICE_DISPONIVEL:
             try:
-                nome_metodo = {
-                    "word_com": "Microsoft Word COM",
-                    "docx2pdf": "docx2pdf",
-                    "aspose": "Aspose.Words"
-                }.get(metodo, metodo)
-                
-                if metodo == "word_com":
-                    sucesso = self._converter_com_word_com(arquivo_docx, arquivo_pdf, word_instance)
-                elif metodo == "docx2pdf":
-                    sucesso = self._converter_com_docx2pdf(arquivo_docx, arquivo_pdf)
-                elif metodo == "aspose":
-                    sucesso = self._converter_com_aspose(arquivo_docx, arquivo_pdf)
-                
+                sucesso = self._converter_com_libreoffice(arquivo_docx, arquivo_pdf)
                 if sucesso:
-                    return True, nome_metodo
-                    
+                    return True, "LibreOffice"
             except Exception as e:
                 erro_msg = str(e)
-                erros_metodos.append(f"{nome_metodo}: {erro_msg}")
-                continue
+                erros_metodos.append(f"LibreOffice: {erro_msg}")
+        
+        # SEGUNDA TENTATIVA: Aspose (boa fidelidade, funciona sem instalação)
+        if ASPOSE_WORDS_DISPONIVEL:
+            try:
+                sucesso = self._converter_com_aspose(arquivo_docx, arquivo_pdf)
+                if sucesso:
+                    return True, "Aspose.Words"
+            except Exception as e:
+                erro_msg = str(e)
+                erros_metodos.append(f"Aspose.Words: {erro_msg}")
+                
+                # Se Aspose falhar, tentar reparar o documento DOCX
+                try:
+                    doc_reparado = aw.Document(str(arquivo_docx))
+                    # Força re-parse do documento
+                    doc_reparado.save(str(arquivo_docx), aw.SaveFormat.DOCX)
+                    # Tenta converter novamente
+                    doc_reparado = aw.Document(str(arquivo_docx))
+                    doc_reparado.save(str(arquivo_pdf), aw.SaveFormat.PDF)
+                    return True, "Aspose.Words (reparado)"
+                except Exception as e_repair:
+                    erros_metodos.append(f"Aspose Reparação: {str(e_repair)}")
+        
+        # TERCEIRA TENTATIVA: Word COM com instância passada
+        if word_instance is not None:
+            try:
+                sucesso = self._converter_com_word_com(arquivo_docx, arquivo_pdf, word_instance)
+                if sucesso:
+                    return True, "Microsoft Word COM"
+            except Exception as e:
+                erro_msg = str(e)
+                erros_metodos.append(f"Microsoft Word COM: {erro_msg}")
+        
+        # QUARTA TENTATIVA: Word COM nova instância
+        if WORD_COM_DISPONIVEL:
+            try:
+                sucesso = self._converter_com_word_com(arquivo_docx, arquivo_pdf, None)
+                if sucesso:
+                    return True, "Microsoft Word COM"
+            except Exception as e:
+                erro_msg = str(e)
+                erros_metodos.append(f"Microsoft Word COM (nova instância): {erro_msg}")
+        
+        if not erros_metodos:
+            raise Exception("Nenhum método de conversão disponível!")
         
         erros_completos = "\n      ".join(erros_metodos)
         raise Exception(f"Todos os métodos falharam:\n      {erros_completos}")
     
     def _converter_arquivo_worker(self, args):
-        """Worker para conversão paralela"""
-        idx, total, arquivo_docx, pasta_saida, word_instance = args
+        """Worker para conversão paralela com COM inicializado"""
+        idx, total, arquivo_docx, pasta_saida = args
+        
+        # CRÍTICO: Inicializar COM em cada thread
+        try:
+            ctypes.windll.ole32.CoInitializeEx(None, 0)
+        except:
+            try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except:
+                pass
         
         try:
             arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
+            # Em modo paralelo, desabilitar LibreOffice (não funciona bem em threads)
             sucesso, metodo_usado = self._converter_arquivo_com_fallback(
-                arquivo_docx, arquivo_pdf, word_instance
+                arquivo_docx, arquivo_pdf, None, usar_libreoffice=False
             )
             
             return {
@@ -570,6 +807,16 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
                 'idx': idx,
                 'total': total
             }
+        finally:
+            # Limpar COM
+            try:
+                ctypes.windll.ole32.CoUninitialize()
+            except:
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except:
+                    pass
     
     
     def _executar_conversao(self):
@@ -619,9 +866,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
     def _thread_conversao_pasta(self, pasta_entrada, pasta_saida):
         """Thread para conversão de pasta"""
         self.conversao_ativa = True
-        word_instance = None
-        usar_word_com = "word_com" in self.metodos_disponiveis
-        
+
         try:
             self._adicionar_log("=" * 80, "info")
             self._adicionar_log("🚀 INICIANDO CONVERSÃO DOCX → PDF", "sucesso")
@@ -629,52 +874,35 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             self._adicionar_log(f"\n📂 Pasta de entrada: {pasta_entrada}", "info")
             self._adicionar_log(f"📂 Pasta de saída: {pasta_saida}", "info")
             self._adicionar_log("\n" + "-" * 80 + "\n", "info")
-            
+
             # Verificar pasta
             if not pasta_entrada.exists():
                 self._adicionar_log("❌ Pasta de entrada não existe!", "erro")
                 messagebox.showerror("Erro", "A pasta de entrada não existe!")
                 return
-            
+
             # Criar pasta saída
             if not pasta_saida.exists():
                 pasta_saida.mkdir(parents=True, exist_ok=True)
                 self._adicionar_log("✅ Pasta de saída criada\n", "sucesso")
-            
+
             # Obter arquivos DOCX
             arquivos_docx = list(pasta_entrada.glob("*.[dD][oO][cC][xX]"))
-            
+
             if not arquivos_docx:
                 self._adicionar_log("❌ Nenhum arquivo DOCX encontrado!", "erro")
                 messagebox.showwarning("Aviso", "Nenhum arquivo DOCX encontrado!")
                 return
-            
+
             total_arquivos = len(arquivos_docx)
             self._adicionar_log(f"📊 Total de arquivos: {total_arquivos}\n", "info")
-            
+
             inicio_conversao = time.time()
-            
-            # Criar instância única do Word se disponível (otimização)
-            if usar_word_com:
-                try:
-                    self._adicionar_log("⚡ Iniciando Microsoft Word (modo otimizado - sequencial)...\n", "info")
-                    word_instance = win32com.client.Dispatch("Word.Application")
-                    word_instance.Visible = False
-                except Exception as e:
-                    self._adicionar_log(f"⚠️ Não foi possível iniciar Word: {e}\n", "aviso")
-                    usar_word_com = False
-            
-            # Se não usar Word COM, usar processamento paralelo
-            if not usar_word_com and total_arquivos > 1:
-                self._adicionar_log("⚡ Modo paralelo ativado (processamento simultâneo)...\n", "info")
-                convertidos, erros, metodos_usados, lista_erros = self._conversao_paralela(
-                    arquivos_docx, pasta_saida, total_arquivos
-                )
-            else:
-                # Modo sequencial (Word COM)
-                convertidos, erros, metodos_usados, lista_erros = self._conversao_sequencial(
-                    arquivos_docx, pasta_saida, total_arquivos, word_instance
-                )
+
+            self._adicionar_log("📝 Modo sequencial com instância compartilhada do Word...\n", "info")
+            convertidos, erros, metodos_usados, lista_erros = self._conversao_sequencial(
+                arquivos_docx, pasta_saida, total_arquivos
+            )
             
             tempo_total = time.time() - inicio_conversao
             
@@ -704,54 +932,104 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             messagebox.showerror("Erro", f"Erro durante conversão:\n{str(e)}")
         
         finally:
-            # Fechar Word se foi criado
-            if word_instance is not None:
-                try:
-                    self._adicionar_log("\n🔄 Fechando Microsoft Word...", "info")
-                    word_instance.Quit()
-                except Exception as e:
-                    self._adicionar_log(f"⚠️ Erro ao fechar Word: {e}", "aviso")
-            
             self.btn_converter.configure(state="normal", text="🚀 CONVERTER")
             self.conversao_ativa = False
     
-    def _conversao_sequencial(self, arquivos_docx, pasta_saida, total_arquivos, word_instance):
-        """Conversão sequencial (um por vez)"""
+    def _conversao_sequencial(self, arquivos_docx, pasta_saida, total_arquivos, word_instance=None):
+        """Conversão sequencial com instância única do Word (muito mais rápido)"""
+        # Inicializar COM na thread de conversão
+        try:
+            ctypes.windll.ole32.CoInitializeEx(None, 0)
+        except Exception:
+            try:
+                import pythoncom
+                pythoncom.CoInitialize()
+            except Exception:
+                pass
+
         convertidos = 0
         erros = 0
         lista_erros = []
         metodos_usados = {}
-        
-        for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+
+        # Criar UMA ÚNICA instância do Word e reutilizar para todos os arquivos
+        # Isso elimina o overhead de ~3-5s de inicialização por arquivo
+        word = word_instance
+        criou_word = False
+        if WORD_COM_DISPONIVEL and word is None:
             try:
-                progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
-                self._atualizar_progresso(progresso)
-                self._adicionar_log(f"[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
-                
-                arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
-                
-                sucesso, metodo_usado = self._converter_arquivo_com_fallback(
-                    arquivo_docx, arquivo_pdf, word_instance
-                )
-                
-                if sucesso:
-                    self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
-                    convertidos += 1
-                    
-                    if metodo_usado not in metodos_usados:
-                        metodos_usados[metodo_usado] = 0
-                    metodos_usados[metodo_usado] += 1
-            
+                word = self._criar_word_instance()
+                criou_word = True
+                self._adicionar_log("✅ Word COM iniciado (instância compartilhada)", "info")
             except Exception as e:
-                erro_msg = str(e)
-                self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
-                erros += 1
-                lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
-        
+                self._adicionar_log(f"⚠️ Não foi possível iniciar Word COM: {e}", "info")
+                word = None
+
+        try:
+            for idx, arquivo_docx in enumerate(arquivos_docx, 1):
+                try:
+                    progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
+                    self._atualizar_progresso(progresso)
+                    self._adicionar_log(f"[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
+
+                    arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
+
+                    sucesso, metodo_usado = self._converter_arquivo_com_fallback(
+                        arquivo_docx, arquivo_pdf, word
+                    )
+
+                    if sucesso:
+                        self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
+                        convertidos += 1
+                        metodos_usados[metodo_usado] = metodos_usados.get(metodo_usado, 0) + 1
+
+                except Exception as e:
+                    erro_msg = str(e)
+                    self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
+                    erros += 1
+                    lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
+
+                    # Verificar se o Word ainda está vivo após um erro
+                    # Se travou, recriar a instância para os próximos arquivos
+                    if criou_word and word is not None:
+                        try:
+                            _ = word.Version  # Testa se Word ainda responde
+                        except Exception:
+                            self._adicionar_log("⚠️ Word COM reiniciando...", "info")
+                            try:
+                                word.Quit()
+                            except Exception:
+                                pass
+                            word = None
+                            try:
+                                word = self._criar_word_instance()
+                                self._adicionar_log("✅ Word COM reiniciado com sucesso", "info")
+                            except Exception as e_restart:
+                                self._adicionar_log(f"❌ Falha ao reiniciar Word: {e_restart}", "info")
+                                word = None
+
+        finally:
+            # Fechar Word apenas se criamos a instância aqui
+            if criou_word and word is not None:
+                try:
+                    word.Quit()
+                except Exception:
+                    pass
+
+            # Limpar COM
+            try:
+                ctypes.windll.ole32.CoUninitialize()
+            except Exception:
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
+
         return convertidos, erros, metodos_usados, lista_erros
     
     def _conversao_paralela(self, arquivos_docx, pasta_saida, total_arquivos):
-        """Conversão paralela (múltiplos simultaneamente)"""
+        """Conversão paralela (múltiplos simultaneamente) com Aspose"""
         convertidos = 0
         erros = 0
         lista_erros = []
@@ -764,7 +1042,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             # Preparar tarefas
             tarefas = []
             for idx, arquivo_docx in enumerate(arquivos_docx, 1):
-                args = (idx, total_arquivos, arquivo_docx, pasta_saida, None)
+                args = (idx, total_arquivos, arquivo_docx, pasta_saida)
                 future = executor.submit(self._converter_arquivo_worker, args)
                 tarefas.append(future)
             
@@ -794,9 +1072,7 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
     def _thread_conversao_arquivos(self, arquivos_docx, pasta_saida):
         """Thread para conversão de arquivos selecionados"""
         self.conversao_ativa = True
-        word_instance = None
-        usar_word_com = "word_com" in self.metodos_disponiveis
-        
+
         try:
             self._adicionar_log("=" * 80, "info")
             self._adicionar_log("🚀 INICIANDO CONVERSÃO DOCX → PDF", "sucesso")
@@ -804,68 +1080,23 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             self._adicionar_log(f"\n📄 Modo: Arquivos selecionados", "info")
             self._adicionar_log(f"📂 Pasta de saída: {pasta_saida}", "info")
             self._adicionar_log("\n" + "-" * 80 + "\n", "info")
-            
+
             # Criar pasta saída
             if not pasta_saida.exists():
                 pasta_saida.mkdir(parents=True, exist_ok=True)
                 self._adicionar_log("✅ Pasta de saída criada\n", "sucesso")
-            
+
             total_arquivos = len(arquivos_docx)
             self._adicionar_log(f"📊 Total de arquivos: {total_arquivos}\n", "info")
-            
+
             inicio_conversao = time.time()
-            
-            # Criar instância única do Word se disponível (otimização)
-            if usar_word_com:
-                try:
-                    self._adicionar_log("⚡ Iniciando Microsoft Word (modo otimizado - sequencial)...\n", "info")
-                    word_instance = win32com.client.Dispatch("Word.Application")
-                    word_instance.Visible = False
-                except Exception as e:
-                    self._adicionar_log(f"⚠️ Não foi possível iniciar Word: {e}\n", "aviso")
-                    usar_word_com = False
-            
-            # Se não usar Word COM, usar processamento paralelo
-            if not usar_word_com and total_arquivos > 1:
-                self._adicionar_log("⚡ Modo paralelo ativado (processamento simultâneo)...\n", "info")
-                convertidos, erros, metodos_usados, lista_erros = self._conversao_paralela(
-                    arquivos_docx, pasta_saida, total_arquivos
-                )
-            else:
-                # Modo sequencial (Word COM)
-                convertidos = 0
-                erros = 0
-                lista_erros = []
-                metodos_usados = {}
-                
-                for idx, arquivo_docx in enumerate(arquivos_docx, 1):
-                    try:
-                        if not arquivo_docx.exists():
-                            raise Exception("Arquivo não encontrado")
-                        
-                        progresso = f"[{idx}/{total_arquivos}] Convertendo: {arquivo_docx.name}"
-                        self._atualizar_progresso(progresso)
-                        self._adicionar_log(f"[{idx}/{total_arquivos}] 📄 {arquivo_docx.name}", "info")
-                        
-                        arquivo_pdf = pasta_saida / f"{arquivo_docx.stem}.pdf"
-                        
-                        sucesso, metodo_usado = self._converter_arquivo_com_fallback(
-                            arquivo_docx, arquivo_pdf, word_instance
-                        )
-                        
-                        if sucesso:
-                            self._adicionar_log(f"    ✅ Convertido com {metodo_usado}", "sucesso")
-                            convertidos += 1
-                            
-                            if metodo_usado not in metodos_usados:
-                                metodos_usados[metodo_usado] = 0
-                            metodos_usados[metodo_usado] += 1
-                    
-                    except Exception as e:
-                        erro_msg = str(e)
-                        self._adicionar_log(f"    ❌ ERRO: {erro_msg}", "erro")
-                        erros += 1
-                        lista_erros.append(f"{arquivo_docx.name}: {erro_msg}")
+
+            self._adicionar_log("📝 Modo sequencial com instância compartilhada do Word...\n", "info")
+
+            # Reutilizar _conversao_sequencial para evitar duplicação de lógica
+            convertidos, erros, metodos_usados, lista_erros = self._conversao_sequencial(
+                arquivos_docx, pasta_saida, total_arquivos
+            )
             
             tempo_total = time.time() - inicio_conversao
             
@@ -895,13 +1126,5 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
             messagebox.showerror("Erro", f"Erro durante conversão:\n{str(e)}")
         
         finally:
-            # Fechar Word se foi criado
-            if word_instance is not None:
-                try:
-                    self._adicionar_log("\n🔄 Fechando Microsoft Word...", "info")
-                    word_instance.Quit()
-                except Exception as e:
-                    self._adicionar_log(f"⚠️ Erro ao fechar Word: {e}", "aviso")
-            
             self.btn_converter.configure(state="normal", text="🚀 CONVERTER")
             self.conversao_ativa = False

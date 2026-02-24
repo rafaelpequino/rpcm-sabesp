@@ -18,14 +18,18 @@ openpyxl>=3.1.0
 xlrd>=2.0.1
 
 # Conversão DOCX para PDF
-# 1. Microsoft Word COM - Melhor qualidade (requer MS Word instalado no Windows)
+# 1. LibreOffice - MELHOR fidelidade para bordas, linhas e negrito (requer instalação separada no Windows)
+#    Download: https://www.libreoffice.org/download/
+#    Caminho padrão: C:\Program Files\LibreOffice\program\soffice.exe
+#    Este é o método preferido para MÁXIMA FIDELIDADE ao documento original
+
+# 2. Microsoft Word COM - Boa qualidade (requer MS Word instalado no Windows)
 pywin32>=306
 
-# 2. docx2pdf - Alta qualidade (gratuito e open source)
-docx2pdf>=0.1.8
-
-# 3. Aspose.Words - Alta qualidade (comercial com trial - opcional)
-# aspose-words>=24.1.0  # Descomente se quiser usar
+# 3. Aspose.Words - Alta qualidade e compatibilidade com threads (recomendado para modo paralelo)
+# Instale com: pip install aspose-words
+# Versão: >=24.1.0 - Descomente a linha abaixo se quiser usar
+# aspose-words>=24.1.0
 
 # Utilidades
 Pillow>=10.0.0

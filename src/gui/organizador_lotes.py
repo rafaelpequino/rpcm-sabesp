@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox
 import threading
 from pathlib import Path
 import shutil
+import re
 
 from src.gui.styles import COLORS, FONTS, SPACING
 
@@ -316,27 +317,27 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
     
     def _obter_lista_numeros(self):
         """Obtém e processa a lista de números"""
-        texto_numeros = self.text_numeros.get("1.0", "end").strip()
-        if not texto_numeros:
+        texto_numeros = self.text_numeros.get("1.0", "end")
+        if not texto_numeros.strip():
             return None
-        
+
         lista_numeros = []
-        for item in texto_numeros.replace(',', '\n').split('\n'):
+        # Separar por qualquer combinação de vírgula, ponto-e-vírgula,
+        # nova linha (\n ou \r), tab ou espaços múltiplos
+        for item in re.split(r'[,;\s]+', texto_numeros):
             item = item.strip()
-            if item:
+            # Aceitar apenas sequências numéricas puras
+            if item and re.match(r'^\d+$', item):
                 lista_numeros.append(item)
-        
+
         return lista_numeros if lista_numeros else None
     
     def _extrair_numero_arquivo(self, nome_arquivo):
-        """Extrai os primeiros dígitos do nome do arquivo"""
-        numero = ""
-        for char in nome_arquivo:
-            if char.isdigit():
-                numero += char
-            else:
-                break
-        return numero
+        """Extrai o número do início do nome do arquivo usando regex"""
+        # re.match é mais robusto: lida com espaços iniciais, BOM e outros
+        # caracteres invisíveis que travam o laço caractere-por-caractere
+        match = re.match(r'^\s*(\d+)', nome_arquivo)
+        return match.group(1) if match else ""
     
     def _limpar_historico(self):
         """Limpa apenas o histórico"""
@@ -398,8 +399,12 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
                 self._adicionar_log("❌ Pasta de destino não existe!\n", "erro")
                 return
             
-            # Obter todos os PDFs
-            arquivos_encontrados = list(pasta_destino.glob("*.[pP][dD][fF]"))
+            # Obter todos os PDFs — iterdir + suffix.lower() é mais confiável
+            # que glob com character classes no Windows
+            arquivos_encontrados = [
+                f for f in pasta_destino.iterdir()
+                if f.is_file() and f.suffix.lower() == '.pdf'
+            ]
             numeros_encontrados = set()
             mapa_numeros_arquivos = {}
             
@@ -544,14 +549,18 @@ class OrganizadorLotesFrame(ctk.CTkScrollableFrame):
             numeros_copiados = set()
             erros = 0
             
-            # Processar PDFs
-            arquivos_encontrados = list(pasta_origem.glob("*.[pP][dD][fF]"))
+            # Processar PDFs — iterdir + suffix.lower() é mais confiável no Windows
+            arquivos_encontrados = [
+                f for f in pasta_origem.iterdir()
+                if f.is_file() and f.suffix.lower() == '.pdf'
+            ]
             
-            self._adicionar_log(f"Total de arquivos na origem: {len(arquivos_encontrados)}\n", "info")
-            
+            self._adicionar_log(f"Total de arquivos na origem: {len(arquivos_encontrados)}", "info")
+            self._adicionar_log(f"Números buscados: {sorted(lista_numeros_str)}\n", "info")
+
             for arquivo in arquivos_encontrados:
                 numero = self._extrair_numero_arquivo(arquivo.stem)
-                
+
                 if numero in lista_numeros_str:
                     try:
                         caminho_destino = pasta_destino / arquivo.name
