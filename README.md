@@ -1,4 +1,4 @@
-# 🏢 Sistema Unificado de Automações - Sabesp
+# 🏢 Automações RPCMS
 
 Sistema integrado com 3 automações essenciais para otimizar o trabalho diário da Sabesp.
 
