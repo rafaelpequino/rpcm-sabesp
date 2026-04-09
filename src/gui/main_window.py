@@ -15,7 +15,7 @@ import pyperclip
 from src.gui.styles import COLORS, FONTS, SPACING, WINDOW, CTK_THEME
 from src.gui.organizador_lotes import OrganizadorLotesFrame
 from src.gui.conversor_pdf import ConversorPdfFrame
-from src.gui.alterar_numero import AlterarNumeroFrame
+from src.gui.alterar_numero_lote import AlterarNumeroLoteFrame
 from src.utils.validators import Validator
 from src.utils.logger_config import setup_logger
 from src.utils.config_manager import ConfigManager
@@ -44,7 +44,7 @@ class MainWindow(ctk.CTk):
         # Variáveis de controle
         self.lista_documentos = []  # Lista de documentos
         self.template_path = None  # Caminho do template selecionado
-        self.aba_atual = "rpcm"  # Aba ativa (rpcm, lotes, conversor, alterar_numero)
+        self.aba_atual = "rpcm"  # Aba ativa (rpcm, lotes, conversor, alterar_numero, alterar_numero_lote)
         self.pasta_destino_rpcm = None  # Caminho da pasta para salvar RPCMs
         self.pasta_templates = None  # Caminho padrão da pasta de templates
         
@@ -167,10 +167,10 @@ class MainWindow(ctk.CTk):
         )
         self.btn_nav_lotes.pack(side="left", padx=5)
         
-        self.btn_nav_alterar_numero = ctk.CTkButton(
+        self.btn_nav_alterar_numero_lote = ctk.CTkButton(
             botoes_frame,
-            text="🔢 Alterar Nº",
-            command=lambda: self._trocar_aba("alterar_numero"),
+            text="📦 Alterar Nº Preço",
+            command=lambda: self._trocar_aba("alterar_numero_lote"),
             width=180,
             height=45,
             font=FONTS['button'],
@@ -178,7 +178,7 @@ class MainWindow(ctk.CTk):
             hover_color=COLORS['border'],
             text_color=COLORS['text']
         )
-        self.btn_nav_alterar_numero.pack(side="left", padx=5)
+        self.btn_nav_alterar_numero_lote.pack(side="left", padx=5)
         
         # ===== BARRA DE STATUS (criar antes para poder usar update_status) =====
         self._criar_barra_status()
@@ -206,8 +206,8 @@ class MainWindow(ctk.CTk):
         # Aba Conversor PDF
         self.frame_conversor = ConversorPdfFrame(self.container_abas)
         
-        # Aba Alterar Números
-        self.frame_alterar_numero = AlterarNumeroFrame(self.container_abas)
+        # Aba Alterar Números em Lote
+        self.frame_alterar_numero_lote = AlterarNumeroLoteFrame(self.container_abas)
         
         # Mostrar aba inicial (RPCM)
         self._trocar_aba("rpcm")
@@ -220,7 +220,7 @@ class MainWindow(ctk.CTk):
         self.frame_rpcm.pack_forget()
         self.frame_lotes.pack_forget()
         self.frame_conversor.pack_forget()
-        self.frame_alterar_numero.pack_forget()
+        self.frame_alterar_numero_lote.pack_forget()
         
         # Resetar cores dos botões
         self.btn_nav_rpcm.configure(
@@ -235,7 +235,7 @@ class MainWindow(ctk.CTk):
             fg_color=COLORS['secondary'],
             text_color=COLORS['text']
         )
-        self.btn_nav_alterar_numero.configure(
+        self.btn_nav_alterar_numero_lote.configure(
             fg_color=COLORS['secondary'],
             text_color=COLORS['text']
         )
@@ -262,13 +262,13 @@ class MainWindow(ctk.CTk):
                 text_color=COLORS['secondary']
             )
             self.update_status("Conversor DOCX → PDF ativo", "info")
-        elif aba == "alterar_numero":
-            self.frame_alterar_numero.pack(fill="both", expand=True, padx=SPACING['padding'], pady=SPACING['padding'])
-            self.btn_nav_alterar_numero.configure(
+        elif aba == "alterar_numero_lote":
+            self.frame_alterar_numero_lote.pack(fill="both", expand=True, padx=SPACING['padding'], pady=SPACING['padding'])
+            self.btn_nav_alterar_numero_lote.configure(
                 fg_color=COLORS['primary'],
                 text_color=COLORS['secondary']
             )
-            self.update_status("Alterar Números ativo", "info")
+            self.update_status("Alterar Números em Lote ativo", "info")
     
     def _criar_conteudo_rpcm(self):
         """Cria o conteúdo da aba de Gerador de RPCM"""
@@ -718,7 +718,7 @@ class MainWindow(ctk.CTk):
     # ===== MÉTODOS DE CONTROLE =====
     
     def _on_adicionar_lista(self):
-        """Handler para adicionar item à lista (Modo Lote)"""
+        """Handler para adicionar item à lista"""
         # Coletar dados dos campos
         descricao = self.entry_descricao.get().strip()
         unidade = self.entry_unidade.get().strip()
