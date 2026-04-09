@@ -1,5 +1,5 @@
 """
-Janela principal da aplicação - Sistema Unificado de Automações
+Janela principal da aplicação - Automações RPCMS
 Integra: Gerador de RPCM, Organizador de Lotes e Conversor DOCX → PDF
 """
 
@@ -15,6 +15,7 @@ import pyperclip
 from src.gui.styles import COLORS, FONTS, SPACING, WINDOW, CTK_THEME
 from src.gui.organizador_lotes import OrganizadorLotesFrame
 from src.gui.conversor_pdf import ConversorPdfFrame
+from src.gui.alterar_numero import AlterarNumeroFrame
 from src.utils.validators import Validator
 from src.utils.logger_config import setup_logger
 from src.utils.config_manager import ConfigManager
@@ -26,7 +27,7 @@ logger = setup_logger()
 
 
 class MainWindow(ctk.CTk):
-    """Janela principal da aplicação - Sistema Unificado de Automações - RPCMS - EPC Sabesp"""
+    """Janela principal da aplicação - Automações RPCMS"""
     
     def __init__(self):
         super().__init__()
@@ -36,14 +37,14 @@ class MainWindow(ctk.CTk):
         ctk.set_default_color_theme(CTK_THEME['color_theme'])
         
         # Configurações da janela
-        self.title("Sistema Unificado de Automações - RPCMS - EPC Sabesp")
+        self.title("Automações RPCMS")
         self.geometry(f"{WINDOW['default_width']}x{WINDOW['default_height']}")
         self.minsize(WINDOW['min_width'], WINDOW['min_height'])
         
         # Variáveis de controle
         self.lista_documentos = []  # Lista de documentos
         self.template_path = None  # Caminho do template selecionado
-        self.aba_atual = "rpcm"  # Aba ativa (rpcm, lotes, conversor)
+        self.aba_atual = "rpcm"  # Aba ativa (rpcm, lotes, conversor, alterar_numero)
         self.pasta_destino_rpcm = None  # Caminho da pasta para salvar RPCMs
         self.pasta_templates = None  # Caminho padrão da pasta de templates
         
@@ -118,7 +119,7 @@ class MainWindow(ctk.CTk):
         
         titulo = ctk.CTkLabel(
             titulo_frame,
-            text="🏢 Sistema Unificado de Automações - RPCMS - EPC Sabesp",
+            text="🏢 Automações RPCMS",
             font=("Segoe UI", 18, "bold"),
             text_color=COLORS['primary']
         )
@@ -166,6 +167,19 @@ class MainWindow(ctk.CTk):
         )
         self.btn_nav_lotes.pack(side="left", padx=5)
         
+        self.btn_nav_alterar_numero = ctk.CTkButton(
+            botoes_frame,
+            text="🔢 Alterar Nº",
+            command=lambda: self._trocar_aba("alterar_numero"),
+            width=180,
+            height=45,
+            font=FONTS['button'],
+            fg_color=COLORS['secondary'],
+            hover_color=COLORS['border'],
+            text_color=COLORS['text']
+        )
+        self.btn_nav_alterar_numero.pack(side="left", padx=5)
+        
         # ===== BARRA DE STATUS (criar antes para poder usar update_status) =====
         self._criar_barra_status()
         
@@ -192,6 +206,9 @@ class MainWindow(ctk.CTk):
         # Aba Conversor PDF
         self.frame_conversor = ConversorPdfFrame(self.container_abas)
         
+        # Aba Alterar Números
+        self.frame_alterar_numero = AlterarNumeroFrame(self.container_abas)
+        
         # Mostrar aba inicial (RPCM)
         self._trocar_aba("rpcm")
     
@@ -203,6 +220,7 @@ class MainWindow(ctk.CTk):
         self.frame_rpcm.pack_forget()
         self.frame_lotes.pack_forget()
         self.frame_conversor.pack_forget()
+        self.frame_alterar_numero.pack_forget()
         
         # Resetar cores dos botões
         self.btn_nav_rpcm.configure(
@@ -214,6 +232,10 @@ class MainWindow(ctk.CTk):
             text_color=COLORS['text']
         )
         self.btn_nav_conversor.configure(
+            fg_color=COLORS['secondary'],
+            text_color=COLORS['text']
+        )
+        self.btn_nav_alterar_numero.configure(
             fg_color=COLORS['secondary'],
             text_color=COLORS['text']
         )
@@ -240,6 +262,13 @@ class MainWindow(ctk.CTk):
                 text_color=COLORS['secondary']
             )
             self.update_status("Conversor DOCX → PDF ativo", "info")
+        elif aba == "alterar_numero":
+            self.frame_alterar_numero.pack(fill="both", expand=True, padx=SPACING['padding'], pady=SPACING['padding'])
+            self.btn_nav_alterar_numero.configure(
+                fg_color=COLORS['primary'],
+                text_color=COLORS['secondary']
+            )
+            self.update_status("Alterar Números ativo", "info")
     
     def _criar_conteudo_rpcm(self):
         """Cria o conteúdo da aba de Gerador de RPCM"""
