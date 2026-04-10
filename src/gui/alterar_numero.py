@@ -41,7 +41,6 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         self.arquivo_word = None
         self.numero_busca = None
         self.numero_substituir = None
-        self.pasta_destino = None
         self.processamento_ativo = False
         self.ocorrencias_encontradas = 0
         
@@ -76,7 +75,7 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         # Descrição
         descricao = ctk.CTkLabel(
             self,
-            text="Selecione um arquivo Word, informe o número a buscar e o número de substituição",
+            text="Selecione um arquivo Word e informe o número a buscar e o número de substituição",
             font=FONTS['small'],
             text_color=COLORS['text_secondary']
         )
@@ -88,10 +87,7 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         # ===== SEÇÃO 2: NÚMEROS =====
         self._criar_secao_numeros()
         
-        # ===== SEÇÃO 3: PASTA DE DESTINO =====
-        self._criar_secao_pasta_destino()
-        
-        # ===== SEÇÃO 4: AÇÕES =====
+        # ===== SEÇÃO 3: AÇÕES =====
         self._criar_secao_acoes()
     
     def _criar_secao_selecao_arquivo(self):
@@ -202,44 +198,6 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         container_numeros.grid_columnconfigure(1, minsize=200)
         container_numeros.grid_columnconfigure(4, minsize=200)
     
-    def _criar_secao_pasta_destino(self):
-        """Cria seção de seleção da pasta de destino"""
-        frame = ctk.CTkFrame(self, fg_color=COLORS['background'])
-        frame.pack(fill="x", pady=SPACING['margin'])
-        
-        titulo_secao = ctk.CTkLabel(
-            frame,
-            text="Pasta de Destino",
-            font=FONTS['subtitle'],
-            text_color=COLORS['primary']
-        )
-        titulo_secao.pack(anchor="w", padx=SPACING['padding'], pady=(SPACING['padding'], SPACING['margin']))
-        
-        # Frame com botão e label
-        container = ctk.CTkFrame(frame, fg_color="transparent")
-        container.pack(fill="x", padx=SPACING['padding'], pady=(0, SPACING['padding']))
-        
-        self.btn_selecionar_pasta = ctk.CTkButton(
-            container,
-            text="📁 Escolher Pasta",
-            command=self._selecionar_pasta_destino,
-            width=250,
-            height=40,
-            font=FONTS['button'],
-            fg_color=COLORS['primary'],
-            hover_color=COLORS['hover']
-        )
-        self.btn_selecionar_pasta.pack(side="left", padx=(0, SPACING['margin']))
-        
-        # Label com nome da pasta
-        self.label_pasta = ctk.CTkLabel(
-            container,
-            text="Nenhuma pasta selecionada",
-            font=FONTS['input'],
-            text_color=COLORS['text_secondary']
-        )
-        self.label_pasta.pack(side="left", fill="x", expand=True)
-    
     def _criar_secao_acoes(self):
         """Cria seção de botões de ação"""
         frame = ctk.CTkFrame(self, fg_color=COLORS['background'])
@@ -273,38 +231,11 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         # Informação
         self.label_info = ctk.CTkLabel(
             container,
-            text="Selecione um arquivo, preencha os números e escolha a pasta de destino",
+            text="Selecione um arquivo e preencha os números",
             font=FONTS['small'],
             text_color=COLORS['text_secondary']
         )
         self.label_info.pack(side="left", fill="x", expand=True)
-    
-    def _selecionar_pasta_destino(self):
-        """Seleciona a pasta onde salvar o arquivo"""
-        pasta = filedialog.askdirectory(
-            title="Selecionar Pasta de Destino",
-            parent=self
-        )
-        
-        if pasta:
-            # Validar se é a mesma pasta do arquivo original
-            if self.arquivo_word:
-                pasta_original = Path(self.arquivo_word).parent
-                pasta_selecionada = Path(pasta)
-                
-                if pasta_original == pasta_selecionada:
-                    messagebox.showwarning(
-                        "Aviso",
-                        "Não é possível salvar na mesma pasta do arquivo original.\n"
-                        "Por favor, selecione uma pasta diferente."
-                    )
-                    return
-            
-            self.pasta_destino = pasta
-            # Mostrar apenas o nome da pasta
-            nome_pasta = Path(pasta).name
-            self.label_pasta.configure(text=f"✓ {nome_pasta}")
-            self._validar_entrada()
     
     def _selecionar_arquivo(self):
         """Seleciona um arquivo Word"""
@@ -326,17 +257,8 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         arquivo_ok = self.arquivo_word is not None
         numero_busca_ok = self.entrada_busca.get().strip() != ""
         numero_substituir_ok = self.entrada_substituir.get().strip() != ""
-        pasta_ok = self.pasta_destino is not None
-        pastas_diferentes = True
         
-        # Verificar se a pasta de destino é diferente da pasta do arquivo original
-        if arquivo_ok and pasta_ok:
-            pasta_original = Path(self.arquivo_word).parent
-            pasta_destino = Path(self.pasta_destino)
-            if pasta_original == pasta_destino:
-                pastas_diferentes = False
-        
-        if arquivo_ok and numero_busca_ok and numero_substituir_ok and pasta_ok and pastas_diferentes:
+        if arquivo_ok and numero_busca_ok and numero_substituir_ok:
             self.btn_processar.configure(state="normal")
         else:
             self.btn_processar.configure(state="disabled")
@@ -372,6 +294,17 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         )
         thread.start()
     
+    _WNS = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'
+
+    def _substituir_em_run(self, run, busca, substituir):
+        """Substitui texto nos elementos <w:t> do run sem tocar em imagens ou outros elementos"""
+        count = 0
+        for elem in run._r.iter(self._WNS):
+            if elem.text and busca in elem.text:
+                count += elem.text.count(busca)
+                elem.text = elem.text.replace(busca, substituir)
+        return count
+
     def _executar_substituicao(self, arquivo, numero_busca, numero_substituir):
         """Executa a substituição de números no documento"""
         try:
@@ -383,11 +316,8 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
             # Procurar e substituir em parágrafos
             for paragrafo in doc.paragraphs:
                 if numero_busca in paragrafo.text:
-                    # Processar runs para manter formatação
                     for run in paragrafo.runs:
-                        if numero_busca in run.text:
-                            run.text = run.text.replace(numero_busca, numero_substituir)
-                            count += run.text.count(numero_substituir)
+                        count += self._substituir_em_run(run, numero_busca, numero_substituir)
             
             # Procurar e substituir em tabelas
             for tabela in doc.tables:
@@ -396,20 +326,15 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
                         for paragrafo in celula.paragraphs:
                             if numero_busca in paragrafo.text:
                                 for run in paragrafo.runs:
-                                    if numero_busca in run.text:
-                                        run.text = run.text.replace(numero_busca, numero_substituir)
-                                        count += run.text.count(numero_substituir)
+                                    count += self._substituir_em_run(run, numero_busca, numero_substituir)
             
-            # Salvar arquivo modificado na pasta de destino com o mesmo nome
-            nome_arquivo_original = Path(self.arquivo_word).name
-            arquivo_destino = Path(self.pasta_destino) / nome_arquivo_original
-            
-            doc.save(str(arquivo_destino))
+            # Salvar arquivo modificado no mesmo local (substitui o arquivo original)
+            doc.save(arquivo)
             
             self.ocorrencias_encontradas = count
             
             # Atualizar interface na thread principal
-            self.after(0, self._procesamento_concluido, count, str(arquivo_destino))
+            self.after(0, self._procesamento_concluido, count, arquivo)
             
         except Exception as e:
             self.after(0, lambda: messagebox.showerror(
@@ -425,9 +350,9 @@ class AlterarNumeroFrame(ctk.CTkScrollableFrame):
         
         messagebox.showinfo(
             "Sucesso",
-            f"Arquivo processado com sucesso!\n\n"
-            f"Ocorrências alteradas: {count}\n\n"
-            f"Arquivo salvo em:\n{arquivo_destino}"
+            f"Arquivo alterado com sucesso!\n\n"
+            f"Números alterados: {count}\n\n"
+            f"Arquivo: {Path(arquivo_destino).name}"
         )
     
     def _procesamento_erro(self):

@@ -51,7 +51,6 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
         # Variáveis
         self.arquivo_planilha = None
         self.pasta_arquivos = None
-        self.pasta_destino = None
         self.processamento_ativo = False
         self.dados_planilha = []
         
@@ -98,13 +97,10 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
         # ===== SEÇÃO 2: SELEÇÃO DE PASTA DE ARQUIVOS =====
         self._criar_secao_pasta_arquivos()
         
-        # ===== SEÇÃO 3: SELEÇÃO DE PASTA DE DESTINO =====
-        self._criar_secao_pasta_destino()
-        
-        # ===== SEÇÃO 4: AÇÕES =====
+        # ===== SEÇÃO 3: AÇÕES =====
         self._criar_secao_acoes()
         
-        # ===== SEÇÃO 5: PROGRESSO =====
+        # ===== SEÇÃO 4: PROGRESSO =====
         self._criar_secao_progresso()
     
     def _criar_secao_planilha(self):
@@ -192,44 +188,6 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
         )
         self.label_pasta_arquivos.pack(side="left", fill="x", expand=True)
     
-    def _criar_secao_pasta_destino(self):
-        """Cria seção de seleção da pasta de destino"""
-        frame = ctk.CTkFrame(self, fg_color=COLORS['background'])
-        frame.pack(fill="x", pady=SPACING['margin'])
-        
-        titulo_secao = ctk.CTkLabel(
-            frame,
-            text="Pasta de Destino",
-            font=FONTS['subtitle'],
-            text_color=COLORS['primary']
-        )
-        titulo_secao.pack(anchor="w", padx=SPACING['padding'], pady=(SPACING['padding'], SPACING['margin']))
-        
-        # Frame com botão e label
-        container = ctk.CTkFrame(frame, fg_color="transparent")
-        container.pack(fill="x", padx=SPACING['padding'], pady=(0, SPACING['padding']))
-        
-        self.btn_selecionar_pasta_destino = ctk.CTkButton(
-            container,
-            text="📁 Escolher Pasta",
-            command=self._selecionar_pasta_destino,
-            width=250,
-            height=40,
-            font=FONTS['button'],
-            fg_color=COLORS['primary'],
-            hover_color=COLORS['hover']
-        )
-        self.btn_selecionar_pasta_destino.pack(side="left", padx=(0, SPACING['margin']))
-        
-        # Label com nome da pasta
-        self.label_pasta_destino = ctk.CTkLabel(
-            container,
-            text="Nenhuma pasta selecionada",
-            font=FONTS['input'],
-            text_color=COLORS['text_secondary']
-        )
-        self.label_pasta_destino.pack(side="left", fill="x", expand=True)
-    
     def _criar_secao_acoes(self):
         """Cria seção de botões de ação"""
         frame = ctk.CTkFrame(self, fg_color=COLORS['background'])
@@ -263,7 +221,7 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
         # Informação
         self.label_info = ctk.CTkLabel(
             container,
-            text="Selecione a planilha, pasta com arquivos e pasta de destino",
+            text="Selecione a planilha e pasta com arquivos",
             font=FONTS['small'],
             text_color=COLORS['text_secondary']
         )
@@ -389,27 +347,12 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
             )
             self._validar_entrada()
     
-    def _selecionar_pasta_destino(self):
-        """Seleciona a pasta de destino"""
-        pasta = filedialog.askdirectory(
-            title="Selecionar Pasta de Destino",
-            parent=self
-        )
-        
-        if pasta:
-            self.pasta_destino = pasta
-            # Mostrar apenas o nome da pasta
-            nome_pasta = Path(pasta).name
-            self.label_pasta_destino.configure(text=f"✓ {nome_pasta}")
-            self._validar_entrada()
-    
     def _validar_entrada(self):
         """Valida se todos os campos estão preenchidos"""
         planilha_ok = self.arquivo_planilha is not None and len(self.dados_planilha) > 0
         pasta_arquivos_ok = self.pasta_arquivos is not None
-        pasta_destino_ok = self.pasta_destino is not None
         
-        if planilha_ok and pasta_arquivos_ok and pasta_destino_ok:
+        if planilha_ok and pasta_arquivos_ok:
             self.btn_processar.configure(state="normal")
         else:
             self.btn_processar.configure(state="disabled")
@@ -465,16 +408,24 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
                     # e aplicar TODAS as substituições nesse run, em vez de fazer
                     # um pass para cada número (que seria 5000x mais lento)
                     
+                    WNS = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'
+
+                    def substituir_em_run(run):
+                        """Substitui nos <w:t> sem destruir imagens ou outros elementos do run"""
+                        alterou = False
+                        for elem in run._r.iter(WNS):
+                            if elem.text:
+                                for numero_busca, numero_substituir in self.dados_planilha:
+                                    if numero_busca in elem.text:
+                                        elem.text = elem.text.replace(numero_busca, numero_substituir)
+                                        alterou = True
+                        return alterou
+
                     # Em parágrafos
                     for paragrafo in doc.paragraphs:
                         for run in paragrafo.runs:
-                            # Aplicar todas as substituições no mesmo pass
-                            texto = run.text
-                            for numero_busca, numero_substituir in self.dados_planilha:
-                                if numero_busca in texto:
-                                    arquivo_teve_substituicao = True
-                                    texto = texto.replace(numero_busca, numero_substituir)
-                            run.text = texto
+                            if substituir_em_run(run):
+                                arquivo_teve_substituicao = True
                     
                     # Em tabelas
                     for tabela in doc.tables:
@@ -482,18 +433,12 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
                             for celula in linha.cells:
                                 for paragrafo in celula.paragraphs:
                                     for run in paragrafo.runs:
-                                        # Aplicar todas as substituições no mesmo pass
-                                        texto = run.text
-                                        for numero_busca, numero_substituir in self.dados_planilha:
-                                            if numero_busca in texto:
-                                                arquivo_teve_substituicao = True
-                                                texto = texto.replace(numero_busca, numero_substituir)
-                                        run.text = texto
+                                        if substituir_em_run(run):
+                                            arquivo_teve_substituicao = True
                     
                     # Salvar arquivo apenas se houve substituição
                     if arquivo_teve_substituicao:
-                        arquivo_destino = Path(self.pasta_destino) / arquivo.name
-                        doc.save(str(arquivo_destino))
+                        doc.save(str(arquivo))
                         arquivos_processados += 1
                     else:
                         # Arquivo desconsiderado (nenhum número encontrado)
@@ -552,7 +497,6 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
         
         mensagem += f"\n{'='*25}\n"
         mensagem += f"Total de arquivos analisados: {total}\n"
-        mensagem += f"Pasta de destino: {self.pasta_destino}"
         
         # Mostrar erros se houver
         if erros:
@@ -565,7 +509,8 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
         messagebox.showinfo("Sucesso", mensagem)
         
         # Gerar arquivo de relatório
-        self._gerar_relatorio(arquivos_processados, total, arquivos_desconsiderados, erros)
+        if self.pasta_arquivos:
+            self._gerar_relatorio(arquivos_processados, total, arquivos_desconsiderados, erros)
         
         # Atualizar label de progresso
         status_text = f"✓ {arquivos_processados} arquivos processados"
@@ -619,15 +564,14 @@ class AlterarNumeroLoteFrame(ctk.CTkScrollableFrame):
             relatorio += f"{'='*60}\n"
             relatorio += f"INFORMAÇÕES\n"
             relatorio += f"{'='*60}\n"
-            relatorio += f"Pasta de origem (arquivos): {self.pasta_arquivos}\n"
-            relatorio += f"Pasta de destino: {self.pasta_destino}\n"
+            relatorio += f"Pasta com arquivos: {self.pasta_arquivos}\n"
             relatorio += f"Planilha utilizada: {Path(self.arquivo_planilha).name}\n"
             relatorio += f"Total de mapeamentos (CodSAP - CodServico): {len(self.dados_planilha)}\n"
             
-            # Salvar arquivo
+            # Salvar arquivo na pasta de origem
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             nome_relatorio = f"relatorio_processamento_{timestamp}.txt"
-            caminho_relatorio = Path(self.pasta_destino) / nome_relatorio
+            caminho_relatorio = Path(self.pasta_arquivos) / nome_relatorio
             
             with open(str(caminho_relatorio), 'w', encoding='utf-8') as f:
                 f.write(relatorio)
