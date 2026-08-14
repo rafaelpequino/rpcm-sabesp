@@ -145,7 +145,10 @@ class ConversorPdfFrame(ctk.CTkScrollableFrame):
     def _detectar_metodos(self):
         """Detecta métodos de conversão disponíveis"""
         metodos = []
-        
+
+        if LIBREOFFICE_DISPONIVEL:
+            metodos.append("libreoffice")
+
         if WORD_COM_DISPONIVEL:
             metodos.append("word_com")
         
