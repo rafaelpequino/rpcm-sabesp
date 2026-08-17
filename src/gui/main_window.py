@@ -60,31 +60,13 @@ class MainWindow(ctk.CTk):
         if self.template_valido:
             self.update_status("Sistema pronto ✓", "success")
         else:
-            self.update_status("⚠ Template RPCM não encontrado - coloque template_rpcm.docx na pasta templates/", "error")
+            self.update_status("Selecione um template .docx para começar", "warning")
     
     def _inicializar_geradores(self) -> bool:
         """Inicializa os geradores de documentos"""
-        try:
-            self.generator = DocumentGenerator()
-            self.batch_generator = BatchDocumentGenerator()
-            logger.info("Geradores inicializados com sucesso")
-            return True
-        except FileNotFoundError as e:
-            logger.error(f"Template não encontrado: {e}")
-            messagebox.showerror(
-                "Template não encontrado",
-                "O arquivo template_rpcm.docx não foi encontrado na pasta templates/.\n\n"
-                "Por favor, coloque o template nesta pasta e reinicie a aplicação.\n\n"
-                "Consulte templates/README.md para instruções."
-            )
-            return False
-        except Exception as e:
-            logger.error(f"Erro ao inicializar geradores: {e}", exc_info=True)
-            messagebox.showerror(
-                "Erro de Inicialização",
-                f"Erro ao inicializar sistema:\n{str(e)}"
-            )
-            return False
+        # Geradores são criados quando o usuário seleciona um template
+        logger.info("Geradores aguardando seleção de template pelo usuário")
+        return False
     
     def _configurar_scroll_suave(self, scrollable_frame):
         """Configura scroll suave com mouse wheel"""
